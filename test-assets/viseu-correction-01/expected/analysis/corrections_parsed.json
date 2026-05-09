@@ -1,0 +1,57 @@
+[
+  {
+    "item_id": "VC1-1",
+    "process_type": "licenciamento de obras de alteracao e ampliacao com legalizacao parcial",
+    "review_area": "instrucao-administrativa",
+    "finding_category": "MISSING_DOCUMENT",
+    "source_scope": "procedure-instruction",
+    "source_reference": "RMUE art. 17 + nips-licenciamento-comunicacao-previa.md",
+    "evidence_status": "source-needed",
+    "notice_text": "Processo nao se encontra devidamente instruido com todos os elementos administrativos exigiveis.",
+    "interpretation": "The dossier is missing one or more Viseu instruction elements and the exact applicable NIP has not yet been identified."
+  },
+  {
+    "item_id": "VC1-2",
+    "process_type": "licenciamento de obras de alteracao e ampliacao com legalizacao parcial",
+    "review_area": "acessibilidades-seguranca",
+    "finding_category": "MISSING_DRAWING_OR_ELEMENT",
+    "source_scope": "municipal-viseu",
+    "source_reference": "RMUE art. 20",
+    "evidence_status": "missing-from-submission",
+    "notice_text": "Plano de acessibilidades nao permite validar percursos acessiveis.",
+    "interpretation": "Accessibility submission lacks measurable data required for review."
+  },
+  {
+    "item_id": "VC1-3",
+    "process_type": "licenciamento de obras de alteracao e ampliacao com legalizacao parcial",
+    "review_area": "arquitetura-urbanismo",
+    "finding_category": "MUNICIPAL_PROCEDURE_MISMATCH",
+    "source_scope": "municipal-viseu",
+    "source_reference": "RMUE art. 43 + pdmv-operational-baseline.md",
+    "evidence_status": "depends-on-pdmv",
+    "notice_text": "Deve ser demonstrado o cumprimento da dotacao de estacionamento aplicavel, com base no PDMV.",
+    "interpretation": "Parking count cannot be closed without the parcel framing and PDMV extract."
+  },
+  {
+    "item_id": "VC1-4",
+    "process_type": "licenciamento de obras de alteracao e ampliacao com legalizacao parcial",
+    "review_area": "legalizacao",
+    "finding_category": "LEGALIZATION_GAP",
+    "source_scope": "municipal-viseu",
+    "source_reference": "RMUE arts. 18, 80 e 81",
+    "evidence_status": "missing-from-submission",
+    "notice_text": "Existe anexo executado sem titulo urbanistico identificado no processo.",
+    "interpretation": "The file does not yet document the legalization path or the alteration/legalization drawing set."
+  },
+  {
+    "item_id": "VC1-5",
+    "process_type": "licenciamento de obras de alteracao e ampliacao com legalizacao parcial",
+    "review_area": "especialidades",
+    "finding_category": "NEEDS_SPECIALTY_INPUT",
+    "source_scope": "national",
+    "source_reference": "RJUE baseline + RMUE art. 80(21-24)",
+    "evidence_status": "needs-human-validation",
+    "notice_text": "Caso a legalizacao implique obras de correcao, deverao ser entregues os projetos e demais elementos tecnicos correspondentes.",
+    "interpretation": "Need confirmation on whether corrective works exist and which specialties are triggered."
+  }
+]

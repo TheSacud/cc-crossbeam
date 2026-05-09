@@ -6,6 +6,7 @@ export const extractRouter = Router();
 
 const extractRequestSchema = z.object({
   project_id: z.string().uuid(),
+  force: z.boolean().optional(),
 });
 
 extractRouter.post('/', async (req, res) => {
@@ -14,12 +15,12 @@ extractRouter.post('/', async (req, res) => {
     return res.status(400).json({ error: 'Invalid request', details: parseResult.error });
   }
 
-  const { project_id } = parseResult.data;
+  const { project_id, force } = parseResult.data;
 
   // Respond immediately — extraction runs async
-  res.json({ status: 'extracting', project_id });
+  res.json({ status: 'extracting', project_id, force: !!force });
 
-  extractPdfForProject(project_id).catch((error) => {
+  extractPdfForProject(project_id, { force }).catch((error) => {
     console.error(`Extraction failed for project ${project_id}:`, error);
   });
 });

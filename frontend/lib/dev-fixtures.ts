@@ -1,136 +1,75 @@
 import type { MessageRole } from '@/types/database'
 
 export interface ScriptedMessage {
-  percent: number // 0-100 timeline position
-  phase: number // phase index
+  percent: number
+  phase: number
   role: MessageRole
   content: string
 }
 
-// ============================================
-// CONTRACTOR FLOW — Corrections Analysis
-// Phases: Extract, Analyze, Research, Categorize, Prepare
-// ============================================
 export const CONTRACTOR_MESSAGES: ScriptedMessage[] = [
-  // Phase 0: Extract (0-20%)
-  { percent: 1, phase: 0, role: 'system', content: 'Starting corrections letter analysis...' },
-  { percent: 4, phase: 0, role: 'tool', content: 'Extracting page 1 of corrections letter...' },
-  { percent: 7, phase: 0, role: 'tool', content: 'Extracting page 2 of corrections letter...' },
-  { percent: 10, phase: 0, role: 'assistant', content: 'Found 11 correction items across 2 review sections (Building Plan Check + 2nd Review Comments)' },
-  { percent: 14, phase: 0, role: 'tool', content: 'Parsing code citations: CPC Ch.7, CRC R302.1, ASCE 7-16 §30.11, B&P Code 5536.1...' },
-  { percent: 17, phase: 0, role: 'assistant', content: 'Extracting sheet manifest from plan binder — 15 sheets identified' },
-  { percent: 20, phase: 0, role: 'system', content: 'Extraction complete — 11 items parsed with code references and sheet mappings' },
-
-  // Phase 1: Analyze (20-40%)
-  { percent: 22, phase: 1, role: 'system', content: 'Analyzing correction items for complexity and required action...' },
-  { percent: 25, phase: 1, role: 'tool', content: 'Reviewing sheet observations for CS, A1, A1.1, A2, A3...' },
-  { percent: 28, phase: 1, role: 'assistant', content: 'Item 1 (resubmittal) — straightforward administrative requirement' },
-  { percent: 31, phase: 1, role: 'assistant', content: 'Item 4 (utility connections) — requires contractor field data: sewer size, water meter, connection points' },
-  { percent: 34, phase: 1, role: 'assistant', content: 'Item 5 (covered patio structural) — requires structural engineer: brace details, C&C wind calcs' },
-  { percent: 37, phase: 1, role: 'tool', content: 'Cross-referencing corrections with plan sheets A1, A3, S1, S3...' },
-  { percent: 40, phase: 1, role: 'system', content: 'Analysis complete — items classified by action type' },
-
-  // Phase 2: Research (40-65%)
-  { percent: 42, phase: 2, role: 'system', content: 'Researching California state building codes...' },
-  { percent: 45, phase: 2, role: 'tool', content: 'Looking up CPC Chapter 7 — waste line and water supply sizing by fixture units...' },
-  { percent: 48, phase: 2, role: 'assistant', content: 'CPC Table 703.2: 3" drain = 35 DFU, 4" drain = 216 DFU. ADU adds ~12 DFU.' },
-  { percent: 50, phase: 2, role: 'tool', content: 'Looking up CRC R302.1 — fire separation distance requirements...' },
-  { percent: 52, phase: 2, role: 'tool', content: 'Looking up ASCE 7-16 Section 30.11 — component & cladding wind loads...' },
-  { percent: 55, phase: 2, role: 'system', content: 'Searching Placentia municipal code and building department resources...' },
-  { percent: 57, phase: 2, role: 'tool', content: 'Found: ADU Sewer Connection Standard Detail at placentia.org/DocumentCenter/View/14798' },
-  { percent: 59, phase: 2, role: 'tool', content: 'Checking PMC Chapter 20.40 — grading requirements: 5% landscape, 2% hardscape, 15ft adjacency' },
-  { percent: 62, phase: 2, role: 'assistant', content: 'City research complete — 6 specific findings mapped to correction items' },
-  { percent: 65, phase: 2, role: 'system', content: 'Research phase complete — state and city code references compiled' },
-
-  // Phase 3: Categorize (65-80%)
-  { percent: 67, phase: 3, role: 'system', content: 'Categorizing corrections by required action...' },
-  { percent: 69, phase: 3, role: 'assistant', content: 'Items 1, 2, 9, 10 → AUTO_FIXABLE (4 items)' },
-  { percent: 72, phase: 3, role: 'assistant', content: 'Items 4, 11 → NEEDS_CONTRACTOR_INPUT (2 items — utility data + drainage elevations)' },
-  { percent: 75, phase: 3, role: 'assistant', content: 'Items 3, 5, 12, 13, 14 → NEEDS_PROFESSIONAL (5 items — stamps, structural, roof/fire)' },
-  { percent: 78, phase: 3, role: 'tool', content: 'Building annotation map — 12 sheets affected across 10 revision actions' },
-  { percent: 80, phase: 3, role: 'system', content: 'Categorization complete: 4 auto-fix, 2 contractor-input, 5 professional' },
-
-  // Phase 4: Prepare (80-100%)
-  { percent: 82, phase: 4, role: 'system', content: 'Generating questions for contractor...' },
-  { percent: 85, phase: 4, role: 'assistant', content: 'Created 5 questions for Item 4 (utility connections — sewer, water, electrical, gas)' },
-  { percent: 88, phase: 4, role: 'assistant', content: 'Created 3 questions for Item 11 (drainage — elevations, flow direction, surface materials)' },
-  { percent: 91, phase: 4, role: 'tool', content: 'Adding context questions from professional items (structural status, ridge direction)' },
-  { percent: 94, phase: 4, role: 'assistant', content: 'Preparing professional scope summaries for Designer, Structural Engineer, HERS Rater...' },
-  { percent: 97, phase: 4, role: 'assistant', content: 'Analysis complete — 10 questions ready for contractor input' },
-  { percent: 100, phase: 4, role: 'system', content: 'Completed in 847 seconds (14m 7s) — cost $3.42' },
+  { percent: 1, phase: 0, role: 'system', content: 'A iniciar leitura da notificação municipal...' },
+  { percent: 5, phase: 0, role: 'tool', content: 'Extração da página 1 da notificação de aperfeiçoamento...' },
+  { percent: 9, phase: 0, role: 'tool', content: 'Extração das peças de arquitetura e memória descritiva...' },
+  { percent: 14, phase: 0, role: 'assistant', content: 'Foram identificados 8 pontos de aperfeiçoamento com remissões para RMUE, RJUE e PDMV.' },
+  { percent: 19, phase: 0, role: 'assistant', content: 'Manifesto de peças gerado: 12 folhas e 5 documentos administrativos.' },
+  { percent: 24, phase: 1, role: 'system', content: 'A classificar os itens por impacto técnico e documental...' },
+  { percent: 28, phase: 1, role: 'assistant', content: 'Item 1: falta de elementos instrutórios obrigatórios para o pedido.' },
+  { percent: 32, phase: 1, role: 'assistant', content: 'Item 3: verificação de estacionamento e enquadramento em solo urbano dependente do PDMV.' },
+  { percent: 36, phase: 1, role: 'assistant', content: 'Item 6: acessibilidades necessita revisão da especialidade e memória justificativa.' },
+  { percent: 40, phase: 1, role: 'tool', content: 'Cruzar notificação com folhas A01, A03, AC01 e termo de responsabilidade...' },
+  { percent: 45, phase: 2, role: 'system', content: 'A validar fundamentos nacionais, municipais e operativos...' },
+  { percent: 49, phase: 2, role: 'tool', content: 'Leitura de referências do RMUE sobre instrução e alterações em peças desenhadas...' },
+  { percent: 53, phase: 2, role: 'tool', content: 'Leitura do índice operacional de NIPs para licenciamento de arquitetura e especialidades...' },
+  { percent: 57, phase: 2, role: 'tool', content: 'Verificação do bloco PDMV: estacionamento, classe de solo e condicionantes...' },
+  { percent: 61, phase: 2, role: 'assistant', content: '5 itens ficaram suportados por fonte oficial e 1 ficou assinalado como [SOURCE NEEDED].' },
+  { percent: 65, phase: 2, role: 'assistant', content: 'Separação concluída entre fundamento nacional, municipal e requisito operativo de instrução.' },
+  { percent: 70, phase: 3, role: 'system', content: 'A categorizar os itens para a equipa projetista...' },
+  { percent: 73, phase: 3, role: 'assistant', content: 'Itens 1 e 2 -> MISSING_DOCUMENT' },
+  { percent: 76, phase: 3, role: 'assistant', content: 'Itens 3 e 4 -> REGULATORY_NON_COMPLIANCE' },
+  { percent: 79, phase: 3, role: 'assistant', content: 'Itens 5 e 6 -> NEEDS_SPECIALTY_INPUT' },
+  { percent: 82, phase: 3, role: 'assistant', content: 'Item 7 -> NEEDS_APPLICANT_INPUT | Item 8 -> SOURCE_NEEDED' },
+  { percent: 87, phase: 4, role: 'system', content: 'A preparar perguntas objetivas e estrutura de resposta ao município...' },
+  { percent: 91, phase: 4, role: 'assistant', content: 'Foram criadas 6 perguntas para o requerente e para a equipa projetista.' },
+  { percent: 95, phase: 4, role: 'assistant', content: 'Scope preliminar organizado por arquitetura, acessibilidades e especialidades.' },
+  { percent: 100, phase: 4, role: 'system', content: 'Análise concluída em 12m 14s com pacote pronto para a fase de resposta.' },
 ]
 
-// ============================================
-// CITY FLOW — Plan Review
-// Phases: Extract, Research, Review, Generate
-// ============================================
 export const CITY_MESSAGES: ScriptedMessage[] = [
-  // Phase 0: Extract (0-25%)
-  { percent: 1, phase: 0, role: 'system', content: 'Starting plan review for 1232 N. Jefferson St., Placentia...' },
-  { percent: 4, phase: 0, role: 'tool', content: 'Extracting sheet manifest from plan binder...' },
-  { percent: 7, phase: 0, role: 'assistant', content: 'Found 15 sheets across 5 disciplines' },
-  { percent: 10, phase: 0, role: 'tool', content: 'Parsing sheet CS — Cover Sheet: governing codes, project data, vicinity map...' },
-  { percent: 13, phase: 0, role: 'tool', content: 'Parsing sheets A1, A1.1, A2, A3 — Architectural: site plan, demo plan, floor plan, elevations...' },
-  { percent: 16, phase: 0, role: 'tool', content: 'Parsing sheets SN1, SN2, S1, S2, S3 — Structural: notes, foundation, framing, details...' },
-  { percent: 19, phase: 0, role: 'tool', content: 'Parsing sheets T-1, T-2, T-3 — Energy/Title 24: CF1R performance compliance...' },
-  { percent: 22, phase: 0, role: 'assistant', content: 'Sheet manifest complete — 15 sheets indexed with discipline groups' },
-  { percent: 25, phase: 0, role: 'system', content: 'Extraction complete — plan binder fully parsed' },
-
-  // Phase 1: Research (25-45%)
-  { percent: 27, phase: 1, role: 'system', content: 'Researching applicable codes for Placentia ADU...' },
-  { percent: 30, phase: 1, role: 'tool', content: 'Checking Gov. Code § 66314 — California ADU standards...' },
-  { percent: 33, phase: 1, role: 'assistant', content: 'ADU setbacks: 4 ft side/rear meets state minimum (§ 66314(d)(7))' },
-  { percent: 35, phase: 1, role: 'tool', content: 'Reviewing CRC R302.1 — fire separation distance requirements...' },
-  { percent: 38, phase: 1, role: 'tool', content: 'Searching Placentia municipal code for ADU-specific standards...' },
-  { percent: 40, phase: 1, role: 'assistant', content: 'Found PMC § 23.73.060 — ADU development standards (10ft separation, materials match)' },
-  { percent: 42, phase: 1, role: 'tool', content: 'Checking state preemption flags against city requirements...' },
-  { percent: 45, phase: 1, role: 'assistant', content: '2 potential preemption issues identified — "entrance visibility" and "match architectural style" are potentially subjective' },
-
-  // Phase 2: Review (45-80%)
-  { percent: 47, phase: 2, role: 'system', content: 'Starting discipline-by-discipline plan review...' },
-  { percent: 49, phase: 2, role: 'tool', content: 'Reviewing Architectural (Part A): cover sheet, site plan, demo plan...' },
-  { percent: 52, phase: 2, role: 'assistant', content: 'Architectural A: 21 checks — 16 pass, 5 unclear' },
-  { percent: 55, phase: 2, role: 'tool', content: 'Reviewing Architectural (Part B): floor plan, elevations, sections, roof plan...' },
-  { percent: 58, phase: 2, role: 'assistant', content: 'Architectural B: 26 checks — 21 pass, 5 unclear' },
-  { percent: 61, phase: 2, role: 'tool', content: 'Reviewing Site/Civil: grading, drainage, setbacks, lot coverage, utilities...' },
-  { percent: 64, phase: 2, role: 'assistant', content: 'Site/Civil: 28 checks — 17 pass, 8 unclear, 1 N/A' },
-  { percent: 67, phase: 2, role: 'tool', content: 'Reviewing Structural: foundations, framing, shear walls, connections...' },
-  { percent: 70, phase: 2, role: 'assistant', content: 'Structural: 30 checks — 29 pass, 1 unclear (requires independent engineering review)' },
-  { percent: 73, phase: 2, role: 'tool', content: 'Reviewing Energy/Title 24: CF1R compliance, climate zone, solar PV, HERS...' },
-  { percent: 76, phase: 2, role: 'assistant', content: 'Energy: 25 checks — 23 pass, 2 unclear' },
-  { percent: 79, phase: 2, role: 'system', content: 'All disciplines reviewed — 137 total checks: 115 pass, 0 fail, 21 unclear' },
-
-  // Phase 3: Generate (80-100%)
-  { percent: 81, phase: 3, role: 'system', content: 'Filtering 21 unclear findings for actionable corrections...' },
-  { percent: 84, phase: 3, role: 'assistant', content: 'Dropped 14 findings with no code basis' },
-  { percent: 86, phase: 3, role: 'assistant', content: 'Dropped 5 findings resolved by cross-referencing other sheets' },
-  { percent: 88, phase: 3, role: 'tool', content: 'Running state compliance check against 21 findings...' },
-  { percent: 90, phase: 3, role: 'tool', content: 'Running city compliance check — 6 city-level findings evaluated...' },
-  { percent: 92, phase: 3, role: 'assistant', content: '7 items included as corrections: 3 site/civil, 2 building, 2 planning/zoning' },
-  { percent: 95, phase: 3, role: 'tool', content: 'Drafting corrections letter with code citations and reviewer action tags...' },
-  { percent: 97, phase: 3, role: 'assistant', content: 'Review complete — 137 checks, 7 corrections, 6 VERIFY items, 1 COMPLETE item' },
-  { percent: 100, phase: 3, role: 'system', content: 'Completed in 723 seconds (12m 3s) — cost $2.87' },
+  { percent: 1, phase: 0, role: 'system', content: 'A iniciar revisão municipal do processo Rua do Serrado 14, Viseu...' },
+  { percent: 5, phase: 0, role: 'tool', content: 'Leitura do índice de peças e geração do manifesto de folhas...' },
+  { percent: 10, phase: 0, role: 'assistant', content: 'Manifesto concluído com 12 folhas, memória descritiva e documentos de instrução.' },
+  { percent: 15, phase: 0, role: 'tool', content: 'Separação das áreas: arquitetura-urbanismo, especialidades, acessibilidades-segurança e instrução administrativa...' },
+  { percent: 25, phase: 0, role: 'system', content: 'Extração concluída.' },
+  { percent: 30, phase: 1, role: 'system', content: 'A carregar corpus oficial de Viseu e camada nacional...' },
+  { percent: 34, phase: 1, role: 'tool', content: 'Leitura do RMUE sobre instrução documental e especialidades...' },
+  { percent: 38, phase: 1, role: 'tool', content: 'Leitura do índice operacional NIP para tipo de pedido: licenciamento.' },
+  { percent: 42, phase: 1, role: 'tool', content: 'Verificação do PDMV mínimo operacional para estacionamento e classe de solo...' },
+  { percent: 45, phase: 1, role: 'assistant', content: 'Corpus carregado com separação entre escopo nacional, municipal e operativo.' },
+  { percent: 50, phase: 2, role: 'system', content: 'A correr revisão por área...' },
+  { percent: 55, phase: 2, role: 'assistant', content: 'Arquitetura-urbanismo: 11 verificações, 7 conformes, 3 não conformes, 1 SOURCE_NEEDED.' },
+  { percent: 61, phase: 2, role: 'assistant', content: 'Instrução administrativa: 6 verificações, 4 omissões documentais, 2 conformes.' },
+  { percent: 68, phase: 2, role: 'assistant', content: 'Acessibilidades-segurança: 5 verificações, 2 NEEDS_SPECIALTY_INPUT, 3 conformes.' },
+  { percent: 74, phase: 2, role: 'assistant', content: 'Especialidades: 8 verificações, 3 itens dependentes de elementos adicionais.' },
+  { percent: 80, phase: 2, role: 'system', content: 'Revisão disciplinar concluída.' },
+  { percent: 85, phase: 3, role: 'system', content: 'A consolidar minuta municipal e checklist final...' },
+  { percent: 90, phase: 3, role: 'tool', content: 'Geração de findings com source_scope e source_reference...' },
+  { percent: 95, phase: 3, role: 'assistant', content: 'Minuta municipal fechada com 9 observações acionáveis e referências oficiais.' },
+  { percent: 100, phase: 3, role: 'system', content: 'Revisão concluída em 11m 02s.' },
 ]
 
-// ============================================
-// CAMERON'S ANSWERS — Auto-fill for contractor questions form
-// Maps question_key → answer_text (serialized as string)
-// ============================================
 export const CAMERON_ANSWERS: Record<string, string> = {
-  q_4_0: '4" ABS',
-  q_4_1: '3/4"',
-  q_4_2: 'Left side of main house, approximately 15 feet north of rear wall near back porch. Wye fitting into existing 4" ABS lateral. New two-way cleanout at connection point. 4" ABS from ADU at 2% slope.',
-  q_4_3: 'New subpanel at ADU fed from main panel',
-  q_4_4: 'All-electric (no gas)',
-  q_11_0: 'Yes — I have surveyed elevations',
-  q_11_1: 'Rear toward alley/property line',
-  q_11_2: 'Mix — hardscape near ADU, landscape further out',
-  q_5_0: 'Yes — engineer is working on it',
-  q_12_0: 'Ridge runs east-west (parallel to street)',
+  q_4_0: 'O pedido corresponde a licenciamento de alteração e ampliação.',
+  q_4_1: 'A equipa tem levantamento topográfico e memória atualizada.',
+  q_4_2: 'Foi previsto um lugar de estacionamento dentro do lote, com acesso pela frente norte.',
+  q_4_3: 'A especialidade de acessibilidades será revista pela arquiteta responsável.',
+  q_4_4: 'A memória descritiva consolidada será entregue com nova revisão.',
+  q_11_0: 'Existe certidão predial permanente válida.',
+  q_11_1: 'O requerente autoriza a entrega de elementos complementares em 10 dias úteis.',
+  q_11_2: 'A área exterior mantém mistura de pavimento permeável e zona ajardinada.',
+  q_5_0: 'A legalização de obras preexistentes não faz parte deste pedido.',
+  q_12_0: 'O projetista confirma que a classe de solo será validada na próxima submissão.',
 }
 
-// ============================================
-// PROJECT IDS
-// ============================================
 export const DEMO_CITY_PROJECT_ID = 'a0000000-0000-0000-0000-000000000001'
 export const DEMO_CONTRACTOR_PROJECT_ID = 'a0000000-0000-0000-0000-000000000002'

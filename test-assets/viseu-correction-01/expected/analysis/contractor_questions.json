@@ -1,0 +1,45 @@
+{
+  "question_groups": [
+    {
+      "group_id": "instruction",
+      "title": "Elementos administrativos e NIP",
+      "questions": [
+        {
+          "question_key": "q_vc1_1_0",
+          "question_text": "Consegue indicar qual foi o checklist/NIP municipal usado na submissao original ou anexar a notificacao de rececao do portal?",
+          "question_type": "text",
+          "context": "The notice points to missing instruction elements, but the exact municipal NIP is not yet identified."
+        }
+      ]
+    },
+    {
+      "group_id": "pdmv",
+      "title": "Enquadramento PDMV",
+      "questions": [
+        {
+          "question_key": "q_vc1_3_0",
+          "question_text": "Existe no processo algum extrato de ordenamento / condicionantes ou informacao sobre a classe/categoria de solo da parcela?",
+          "question_type": "text",
+          "context": "Parking and urban framing cannot be closed without the PDMV extract."
+        }
+      ]
+    },
+    {
+      "group_id": "legalizacao",
+      "title": "Ambito da legalizacao",
+      "questions": [
+        {
+          "question_key": "q_vc1_4_0",
+          "question_text": "O anexo existente vai ser mantido tal como esta, ou estao previstas obras de correcao/adaptacao para viabilizar a legalizacao?",
+          "question_type": "choice",
+          "options": [
+            "Manter sem obras",
+            "Legalizar com obras corretivas",
+            "Ainda por definir"
+          ],
+          "context": "This answer determines whether additional specialty projects are required."
+        }
+      ]
+    }
+  ]
+}

@@ -24,12 +24,12 @@ interface ProjectDetailClientProps {
   initialProject: Project
   initialFiles: ProjectFile[]
   userId: string
-  showcaseOutputId?: string  // When set, skip straight to results pinned to this output
+  showcaseOutputId?: string
 }
 
-const CITY_PHASES = ['Extract', 'Research', 'Review', 'Generate']
-const CONTRACTOR_P1_PHASES = ['Extract', 'Analyze', 'Research', 'Categorize', 'Prepare']
-const CONTRACTOR_P2_PHASES = ['Read Answers', 'Research', 'Draft', 'Generate']
+const CITY_PHASES = ['Extrair', 'Pesquisar', 'Rever', 'Gerar']
+const CONTRACTOR_P1_PHASES = ['Extrair', 'Analisar', 'Validar fontes', 'Categorizar', 'Preparar']
+const CONTRACTOR_P2_PHASES = ['Ler respostas', 'Validar', 'Minutar', 'Fechar']
 
 const PROCESSING_STATUSES: ProjectStatus[] = ['processing', 'processing-phase1', 'processing-phase2']
 const TERMINAL_STATUSES: ProjectStatus[] = ['completed', 'failed']
@@ -46,13 +46,11 @@ export function ProjectDetailClient({
   const supabase = useMemo(() => createClient(), [])
   const realtimeReady = useRealtimeAuth(supabase)
 
-  // Sync with server re-renders (e.g., after router.refresh())
   useEffect(() => {
     setProject(initialProject)
     setStarting(false)
   }, [initialProject.id, initialProject.status])
 
-  // DevTools instant state sync — no waiting for polling or server refresh
   useEffect(() => {
     const handler = (e: Event) => {
       const { status, projectId, errorMessage } = (e as CustomEvent).detail
@@ -70,7 +68,6 @@ export function ProjectDetailClient({
     return () => window.removeEventListener('devtools-state-change', handler)
   }, [project.id])
 
-  // DevTools phase control — listen for phase events from dev widget
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail
@@ -82,14 +79,12 @@ export function ProjectDetailClient({
     return () => window.removeEventListener('devtools-phase', handler)
   }, [])
 
-  // Track whether we should act on realtime events (avoids putting status/starting in deps)
   const shouldListenRef = useRef(false)
   useEffect(() => {
     shouldListenRef.current =
       starting || (!TERMINAL_STATUSES.includes(project.status) && project.status !== 'ready')
   }, [project.status, starting])
 
-  // Realtime: project status changes — subscribe ONCE per project, stay alive
   useEffect(() => {
     if (!realtimeReady) return
 
@@ -113,7 +108,6 @@ export function ProjectDetailClient({
       )
       .subscribe((status) => {
         console.log('[Realtime] Subscription:', status)
-        // Catch-up fetch: grab current status in case we missed the event during handshake
         if (status === 'SUBSCRIBED' && shouldListenRef.current) {
           supabase
             .schema('crossbeam')
@@ -166,7 +160,6 @@ export function ProjectDetailClient({
     setStarting(false)
   }
 
-  // Full reset for demo projects — clears messages, outputs, answers, resets to ready
   const [resetting, setResetting] = useState(false)
   const handleReset = async () => {
     setResetting(true)
@@ -188,7 +181,6 @@ export function ProjectDetailClient({
     }
   }
 
-  // SHOWCASE MODE — pinned output, no controls, no reset
   const [preparingLive, setPreparingLive] = useState(false)
   const handleGoLive = async () => {
     setPreparingLive(true)
@@ -215,23 +207,20 @@ export function ProjectDetailClient({
             className="rounded-full px-8 font-bold font-body hover:shadow-[0_0_24px_rgba(45,106,79,0.3)] hover:brightness-110"
           >
             {preparingLive ? <Loader2Icon className="w-4 h-4 mr-2 animate-spin" /> : <PlayIcon className="w-4 h-4 mr-2" />}
-            {preparingLive ? 'Preparing...' : 'Run Live'}
+            {preparingLive ? 'A preparar...' : 'Executar live'}
           </Button>
         </div>
       </div>
     )
   }
 
-  // READY STATE
   if (project.status === 'ready') {
     return (
       <div className="space-y-4 animate-fade-up">
-        {/* ADU Miniature */}
         <div className="flex justify-center pt-2">
           <AduMiniature variant="card" />
         </div>
 
-        {/* Project Info */}
         <div className="text-center space-y-2">
           <h1 className="heading-display text-foreground">{project.project_name}</h1>
           <div className="flex items-center justify-center gap-3">
@@ -241,16 +230,15 @@ export function ProjectDetailClient({
               </Badge>
             )}
             <Badge variant="outline" className="rounded-full font-body">
-              {project.flow_type === 'city-review' ? 'City Review' : 'Corrections Analysis'}
+              {project.flow_type === 'city-review' ? 'Revisão municipal' : 'Análise de aperfeiçoamento'}
             </Badge>
           </div>
         </div>
 
-        {/* Files Card */}
         {initialFiles.length > 0 && (
           <Card className="shadow-[0_8px_32px_rgba(28,25,23,0.08)] border-border/50 max-w-lg mx-auto">
             <CardContent className="p-6">
-              <h3 className="heading-card text-foreground mb-4">Files</h3>
+              <h3 className="heading-card text-foreground mb-4">Ficheiros</h3>
               <div className="space-y-2">
                 {initialFiles.map(file => (
                   <div key={file.id} className="flex items-center gap-3 text-sm font-body">
@@ -268,13 +256,11 @@ export function ProjectDetailClient({
           </Card>
         )}
 
-        {/* CTA Button — THE BUTTON */}
         <div className="flex justify-center">
           <Button
             onClick={handleStartAnalysis}
             disabled={starting}
-            className="rounded-full px-10 py-6 text-lg font-bold font-body
-                       hover:shadow-[0_0_24px_rgba(45,106,79,0.3)] hover:brightness-110"
+            className="rounded-full px-10 py-6 text-lg font-bold font-body hover:shadow-[0_0_24px_rgba(45,106,79,0.3)] hover:brightness-110"
             size="lg"
           >
             {starting ? (
@@ -283,10 +269,10 @@ export function ProjectDetailClient({
               <PlayIcon className="w-5 h-5" />
             )}
             {starting
-              ? 'Starting...'
+              ? 'A iniciar...'
               : project.flow_type === 'city-review'
-                ? 'Run AI Review'
-                : 'Analyze Corrections'
+                ? 'Executar revisão'
+                : 'Analisar notificação'
             }
           </Button>
         </div>
@@ -294,32 +280,27 @@ export function ProjectDetailClient({
     )
   }
 
-  // PROCESSING STATES
   if (PROCESSING_STATUSES.includes(project.status)) {
     const phases = getPhases()
     const heading = project.status === 'processing-phase2'
-      ? 'Building your response...'
+      ? 'A fechar a resposta...'
       : project.flow_type === 'city-review'
-        ? 'Reviewing plans...'
-        : 'Analyzing corrections...'
+        ? 'A rever o processo...'
+        : 'A analisar a notificação...'
 
     return (
       <div className="space-y-4 animate-fade-up">
-        {/* ADU Miniature — center stage */}
         <div className="flex justify-center pt-2">
           <AduMiniature variant="card" />
         </div>
 
-        {/* Heading */}
         <div className="text-center space-y-1">
           <h1 className="heading-section text-foreground">{heading}</h1>
-          <p className="text-muted-foreground font-body">Usually takes 12-18 minutes</p>
+          <p className="text-muted-foreground font-body">Normalmente demora entre 12 e 18 minutos</p>
         </div>
 
-        {/* Progress Phases */}
         <ProgressPhases phases={phases} currentPhaseIndex={currentPhaseIndex} />
 
-        {/* Agent Activity Stream */}
         <div className="max-w-2xl mx-auto">
           <AgentStream projectId={project.id} />
         </div>
@@ -327,15 +308,13 @@ export function ProjectDetailClient({
     )
   }
 
-  // AWAITING ANSWERS
   if (project.status === 'awaiting-answers') {
-    // ContractorQuestionsForm will be built in Phase 5
     return (
       <div className="space-y-6 animate-fade-up">
         <div className="text-center">
-          <h1 className="heading-section text-foreground">A few questions for you</h1>
+          <h1 className="heading-section text-foreground">Faltam alguns elementos</h1>
           <p className="text-muted-foreground font-body mt-2">
-            Our AI needs your input to build the best response
+            O agente precisa destas respostas para fechar a proposta ao município
           </p>
         </div>
         <ContractorQuestionsForm projectId={project.id} userId={userId} />
@@ -343,7 +322,6 @@ export function ProjectDetailClient({
     )
   }
 
-  // COMPLETED
   if (project.status === 'completed') {
     return (
       <div className="animate-fade-up space-y-6">
@@ -357,7 +335,7 @@ export function ProjectDetailClient({
               className="rounded-full font-body"
             >
               <RotateCcwIcon className="w-4 h-4 mr-2" />
-              {resetting ? 'Resetting...' : 'Reset & Run Again'}
+              {resetting ? 'A repor...' : 'Repor e voltar a executar'}
             </Button>
           </div>
         )}
@@ -365,16 +343,15 @@ export function ProjectDetailClient({
     )
   }
 
-  // FAILED
   if (project.status === 'failed') {
     return (
       <div className="space-y-6 animate-fade-up max-w-lg mx-auto pt-12">
         <Card className="shadow-[0_8px_32px_rgba(28,25,23,0.08)] border-destructive/30">
           <CardContent className="p-8 text-center space-y-4">
             <AlertCircleIcon className="w-12 h-12 text-destructive mx-auto" />
-            <h2 className="heading-section text-foreground">Something went wrong</h2>
+            <h2 className="heading-section text-foreground">Ocorreu um erro</h2>
             <p className="text-muted-foreground font-body">
-              {project.error_message || 'The analysis encountered an error. Please try again.'}
+              {project.error_message || 'A análise falhou. Tente novamente.'}
             </p>
             <Button
               onClick={project.is_demo ? handleReset : handleRetry}
@@ -383,7 +360,7 @@ export function ProjectDetailClient({
               className="rounded-full font-body"
             >
               <RotateCcwIcon className="w-4 h-4 mr-2" />
-              {resetting ? 'Resetting...' : 'Try Again'}
+              {resetting ? 'A repor...' : 'Tentar de novo'}
             </Button>
           </CardContent>
         </Card>
@@ -391,10 +368,9 @@ export function ProjectDetailClient({
     )
   }
 
-  // Default fallback
   return (
     <div className="text-center py-12">
-      <p className="text-muted-foreground font-body">Loading project...</p>
+      <p className="text-muted-foreground font-body">A carregar processo...</p>
     </div>
   )
 }

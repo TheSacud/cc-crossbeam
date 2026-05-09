@@ -109,16 +109,18 @@ The agent's domain knowledge comes from **skills** — structured reference file
 ### Prerequisites
 
 - Node.js 20+
-- Supabase project (for database + storage)
+- Supabase local CLI + Docker, or a hosted Supabase project
 - Anthropic API key (for Claude Opus 4.6)
 - Vercel account (for sandbox)
+
+For local Supabase setup, see [`docs/local-supabase.md`](docs/local-supabase.md).
 
 ### Frontend
 
 ```bash
 cd frontend
 npm install
-cp .env.example .env.local  # Fill in Supabase + API keys
+cp .env.local.example .env.local  # Fill in Supabase + API keys
 npm run dev
 ```
 

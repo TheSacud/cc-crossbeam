@@ -67,15 +67,17 @@ export interface Output {
   corrections_letter_pdf_path: string | null
   review_checklist_json: Json | null
 
-  // Contractor Phase 1 outputs
+  // Applicant Phase 1 outputs
   corrections_analysis_json: Json | null
-  contractor_questions_json: Json | null
+  applicant_questions_json: Json | null
+  project_understanding_json: Json | null
 
   // Contractor Phase 2 outputs
   response_letter_md: string | null
   response_letter_pdf_path: string | null
   professional_scope_md: string | null
   corrections_report_md: string | null
+  sheet_annotations_json: Json | null
 
   // Catch-all
   raw_artifacts: Json | null
@@ -88,7 +90,7 @@ export interface Output {
   created_at: string
 }
 
-export interface ContractorAnswer {
+export interface ApplicantAnswer {
   id: string
   project_id: string
   question_key: string
@@ -103,6 +105,7 @@ export interface ContractorAnswer {
   created_at: string
   updated_at: string
 }
+export type ContractorAnswer = ApplicantAnswer
 
 // Database type for Supabase client generic
 export interface Database {
@@ -128,7 +131,7 @@ export interface Database {
         Insert: Partial<Output> & Pick<Output, 'project_id' | 'flow_phase'>
         Update: Partial<Output>
       }
-      contractor_answers: {
+      applicant_answers: {
         Row: ContractorAnswer
         Insert: Partial<ContractorAnswer> & Pick<ContractorAnswer, 'project_id' | 'question_key' | 'question_text'>
         Update: Partial<ContractorAnswer>

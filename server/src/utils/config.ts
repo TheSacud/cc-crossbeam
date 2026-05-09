@@ -16,92 +16,388 @@ export const SKIP_FILES = ['.DS_Store', 'Thumbs.db', '.gitkeep'];
 export const SANDBOX_FILES_PATH = '/vercel/sandbox/project-files';
 export const SANDBOX_OUTPUT_PATH = '/vercel/sandbox/project-files/output';
 export const SANDBOX_SKILLS_BASE = '/vercel/sandbox/.claude/skills';
+export const VISEU_OPERATIONAL_INDEX_PATH = `${SANDBOX_SKILLS_BASE}/viseu-municipal-regulations/references/viseu-operational-index.json`;
+export const VISEU_CORPUS_MANIFEST_PATH = `${SANDBOX_SKILLS_BASE}/viseu-municipal-regulations/references/official-corpus.manifest.json`;
+export const FUTURE_PORTUGAL_MUNICIPAL_RESEARCH_PATH = `${SANDBOX_SKILLS_BASE}/portugal-municipal-research`;
 
 // --- Flow Types ---
-// 'city-review' and 'corrections-analysis' are stored in projects.flow_type
-// 'corrections-response' is an internal flow type for Phase 2 of the contractor flow
+
 export type InternalFlowType = 'city-review' | 'corrections-analysis' | 'corrections-response';
+export type JurisdictionKey = 'viseu-urbanism';
+
+interface JurisdictionProfile {
+  label: string;
+  baseSkill: string;
+  reviewSkill: string;
+  correctionsSkill: string;
+  responseSkill: string;
+}
+
+interface CityProfile {
+  jurisdiction: JurisdictionKey;
+  skillName: string;
+  preloadedManifest?: string;
+}
 
 // --- Budget per Flow ---
 
 export const FLOW_BUDGET: Record<InternalFlowType, { maxTurns: number; maxBudgetUsd: number }> = {
-  'city-review':          { maxTurns: 500, maxBudgetUsd: 50.00 },
-  'corrections-analysis': { maxTurns: 500, maxBudgetUsd: 50.00 },
-  'corrections-response': { maxTurns: 150, maxBudgetUsd: 20.00 },
+  'city-review': { maxTurns: 180, maxBudgetUsd: 25.0 },
+  'corrections-analysis': { maxTurns: 180, maxBudgetUsd: 25.0 },
+  'corrections-response': { maxTurns: 60, maxBudgetUsd: 6.0 },
 };
 
-// --- Onboarded Cities ---
-// Cities with dedicated, verified skill data. These use offline reference files
-// instead of web search — faster, more reliable, higher quality.
-// Key: city slug (lowercase, hyphenated). Value: skill directory name.
-export const ONBOARDED_CITIES: Record<string, string> = {
-  'placentia': 'placentia-adu',
-  'buena-park': 'buena-park-adu',
+export const JURISDICTION_PROFILES: Record<JurisdictionKey, JurisdictionProfile> = {
+  'viseu-urbanism': {
+    label: 'Viseu Urbanism',
+    baseSkill: 'portugal-urban-planning',
+    reviewSkill: 'viseu-plan-review',
+    correctionsSkill: 'viseu-corrections-flow',
+    responseSkill: 'viseu-corrections-complete',
+  },
 };
 
-/** Normalize city name to slug for lookup */
+export const ONBOARDED_CITIES: Record<string, CityProfile> = {
+  viseu: {
+    jurisdiction: 'viseu-urbanism',
+    skillName: 'viseu-municipal-regulations',
+  },
+};
+
+export const ACTIVE_RUNTIME_CITY = 'Viseu';
+export const ACTIVE_RUNTIME_CITY_SLUG = 'viseu';
+
+export const VISEU_REVIEW_GROUPS = [
+  'arquitetura-urbanismo',
+  'especialidades',
+  'acessibilidades-seguranca',
+  'instrucao-administrativa',
+  'legalizacao',
+] as const;
+
+export const VISEU_FINDING_CATEGORIES = [
+  'MISSING_DOCUMENT',
+  'MISSING_DRAWING_OR_ELEMENT',
+  'REGULATORY_NON_COMPLIANCE',
+  'MUNICIPAL_PROCEDURE_MISMATCH',
+  'NEEDS_SPECIALTY_INPUT',
+  'NEEDS_APPLICANT_INPUT',
+  'LEGALIZATION_GAP',
+  'SOURCE_NEEDED',
+] as const;
+
+export const VISEU_SOURCE_SCOPES = [
+  'national',
+  'municipal-viseu',
+  'procedure-instruction',
+] as const;
+
+export const VISEU_EVIDENCE_STATUSES = [
+  'confirmed',
+  'missing-from-submission',
+  'depends-on-pdmv',
+  'needs-human-validation',
+  'source-needed',
+] as const;
+
+const VISEU_REVIEW_GROUP_LINES = VISEU_REVIEW_GROUPS.map((group) => `- ${group}`).join('\n');
+const VISEU_FINDING_CATEGORY_LINES = VISEU_FINDING_CATEGORIES.map((category) => `- ${category}`).join('\n');
+const VISEU_SOURCE_SCOPE_LINES = VISEU_SOURCE_SCOPES.map((scope) => `- ${scope}`).join('\n');
+const VISEU_EVIDENCE_STATUS_LINES = VISEU_EVIDENCE_STATUSES.map((status) => `- ${status}`).join('\n');
+
+// --- City helpers ---
+
 export function citySlug(city: string): string {
   return city.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 }
 
-/** Check if a city has a dedicated skill */
+export function getCityProfile(city: string): CityProfile | null {
+  return ONBOARDED_CITIES[citySlug(city)] ?? null;
+}
+
+export function getJurisdictionKey(_city: string): JurisdictionKey {
+  return 'viseu-urbanism';
+}
+
+export function getJurisdictionProfile(city: string): JurisdictionProfile {
+  return JURISDICTION_PROFILES[getJurisdictionKey(city)];
+}
+
 export function isCityOnboarded(city: string): boolean {
   return citySlug(city) in ONBOARDED_CITIES;
 }
 
-/** Get the skill name for an onboarded city */
 export function getCitySkillName(city: string): string | null {
-  return ONBOARDED_CITIES[citySlug(city)] ?? null;
+  return getCityProfile(city)?.skillName ?? null;
+}
+
+export function getPreloadedManifest(city: string): string | null {
+  return getCityProfile(city)?.preloadedManifest ?? null;
+}
+
+export function isSupportedRuntimeCity(city: string | null | undefined): boolean {
+  return citySlug(city ?? '') === ACTIVE_RUNTIME_CITY_SLUG;
+}
+
+export function getUnsupportedCityMessage(city: string | null | undefined): string {
+  const displayCity = city?.trim() ? city : 'Unknown';
+  return `Unsupported city: only ${ACTIVE_RUNTIME_CITY} is enabled in this runtime (received: ${displayCity})`;
+}
+
+export function assertSupportedRuntimeCity(city: string | null | undefined): asserts city is string {
+  if (!isSupportedRuntimeCity(city)) {
+    throw new Error(getUnsupportedCityMessage(city));
+  }
 }
 
 // --- Skills per Flow ---
-// Returns the skill list dynamically based on flow type and city.
-// City-review: NO web search — onboarded cities only, use dedicated skill.
-// Corrections-analysis: web search available as fallback, but onboarded cities use dedicated skill.
-// Corrections-response: no research needed — just generates deliverables.
 
 export function getFlowSkills(flowType: InternalFlowType, city: string): string[] {
+  assertSupportedRuntimeCity(city);
+  const jurisdiction = getJurisdictionProfile(city);
   const citySkill = getCitySkillName(city);
-
-  if (flowType === 'city-review') {
-    // NO adu-city-research — city review only works with onboarded cities
-    // NO adu-corrections-pdf — PDF generation happens post-sandbox on Cloud Run
-    const skills = [
-      'california-adu',
-      'adu-plan-review',
-      'adu-targeted-page-viewer',
-    ];
-    if (citySkill) skills.push(citySkill);
-    return skills;
-  }
-
-  if (flowType === 'corrections-analysis') {
-    // NO adu-corrections-pdf — PDF generation happens post-sandbox on Cloud Run
-    const skills = [
-      'california-adu',
-      'adu-corrections-flow',
-      'adu-targeted-page-viewer',
-    ];
-    if (citySkill) {
-      // Onboarded city — use dedicated skill, skip web search
-      skills.push(citySkill);
-    } else {
-      // Non-onboarded city — need web search
-      skills.push('adu-city-research');
-    }
-    return skills;
-  }
-
-  // corrections-response — no research, just deliverables
   const skills = [
-    'california-adu',
-    'adu-corrections-complete',
+    jurisdiction.baseSkill,
+    flowType === 'city-review'
+      ? jurisdiction.reviewSkill
+      : flowType === 'corrections-analysis'
+        ? jurisdiction.correctionsSkill
+        : jurisdiction.responseSkill,
   ];
-  if (citySkill) skills.push(citySkill);
+
+  if (flowType === 'corrections-response') {
+    skills.push('viseu-corrections-pdf');
+  }
+
+  if (flowType !== 'corrections-response') {
+    skills.push('adu-targeted-page-viewer');
+  }
+
+  if (citySkill) {
+    skills.push(citySkill);
+  }
+
   return skills;
 }
 
 // --- Prompt Builders ---
+
+function buildPreExtractedNotice(preExtracted?: boolean): string {
+  if (!preExtracted) return '';
+
+  return `
+PRE-EXTRACTED DATA:
+- Page PNGs are ALREADY extracted at full DPI in ${SANDBOX_FILES_PATH}/pages-png/
+- Title block crops are ALREADY in ${SANDBOX_FILES_PATH}/title-blocks/
+- Native PDF text, when available, is already in ${SANDBOX_FILES_PATH}/page-text.json
+- A deterministic preliminary sheet manifest may already be loaded at ${SANDBOX_OUTPUT_PATH}/sheet-manifest.json
+- Preflight extraction metadata may be available at ${SANDBOX_FILES_PATH}/preflight-summary.json
+- Do NOT run extract-pages.sh or crop-title-blocks.sh - they are already done.
+- Go straight to reading the cover sheet and building the sheet manifest.
+`;
+}
+
+function buildViseuOperationalPrompt(
+  flowType: InternalFlowType,
+  city: string,
+  address?: string,
+  contractorAnswersJson?: string,
+  preExtracted?: boolean,
+): string {
+  const addressLine = address ? `LOCAL/IMOVEL: ${address}` : '';
+  const preExtractedNotice = buildPreExtractedNotice(preExtracted);
+
+  if (flowType === 'city-review') {
+    return `You are the ORCHESTRATOR for a municipal urban licensing review for ${city}, Portugal.
+
+PROJECT FILES: ${SANDBOX_FILES_PATH}/
+OUTPUT DIRECTORY: ${SANDBOX_OUTPUT_PATH}/
+MUNICIPALITY: ${city}
+${addressLine}
+${preExtractedNotice}
+
+AVAILABLE SOURCES:
+- portugal-urban-planning: national legal and process context
+- viseu-plan-review: review workflow and checklist taxonomy for municipal screening
+- viseu-municipal-regulations: municipality-specific references and official source registry
+- page-viewer skill: page extraction and targeted plan reading
+- Operational index: ${VISEU_OPERATIONAL_INDEX_PATH}
+- Validated corpus manifest: ${VISEU_CORPUS_MANIFEST_PATH}
+- Reserved namespace for future PT municipal live research: ${FUTURE_PORTUGAL_MUNICIPAL_RESEARCH_PATH}
+
+YOUR JOB:
+- Coordinate subagents; do NOT read full-size plan images in the main context.
+- The server has already validated the mandatory Viseu corpus before this run started.
+- Use ONLY municipal/PDMV/NIP requirements whose verification_status is official_verified in the loaded corpus.
+- Treat any municipal topic outside the validated corpus as out of scope instead of inventing a rule.
+- Separate each finding into one source scope: national, municipal-viseu, or procedure-instruction.
+- Separate confirmed violations from documental gaps, source-needed items, and inconclusive items.
+- If legal basis or project evidence is insufficient, do NOT state a confirmed violation.
+
+REVIEW GROUPS:
+${VISEU_REVIEW_GROUP_LINES}
+
+REQUIRED METADATA FOR EVERY JSON ITEM:
+- process_type
+- review_area
+- finding_category
+- source_scope
+- source_doc
+- article_or_section
+- source_reference
+- verification_status
+- evidence_status
+- evidence_refs[] when the finding depends on any project fact, drawing condition, declared area, typology, implantation, parking, scale, table, or missing sheet/document evidence
+- Optional for visually grounded findings: sheet_refs[] with page/desenho/title/page_png_path/title_block_png_path/visual_note
+- Add determination_status using one of: confirmed_non_compliance, document_missing_or_incomplete, needs_official_source, inconclusive
+
+ALLOWED finding_category values:
+${VISEU_FINDING_CATEGORY_LINES}
+
+ALLOWED source_scope values:
+${VISEU_SOURCE_SCOPE_LINES}
+
+ALLOWED evidence_status values:
+${VISEU_EVIDENCE_STATUS_LINES}
+
+PHASE 1 - Manifest:
+- Reuse ${SANDBOX_OUTPUT_PATH}/sheet-manifest.json when present.
+- Otherwise build it from the cover sheet and title blocks.
+
+PHASE 1.5 - Project Understanding:
+- Write ${SANDBOX_OUTPUT_PATH}/project_understanding.json before discipline review.
+- Ground every high-impact statement with evidence_index entries sourced from sheet-manifest.json and, when useful, ${SANDBOX_FILES_PATH}/page-text.json.
+- Use confidence high/medium/low on all summary claims.
+- For every numeric/area/distance/slope/count value, include value_type using one of: declared, cotated, measured_estimate, inferred, unknown.
+- Set usable_for_compliance=true only for declared or cotated values; measured_estimate, inferred, and unknown values are advisory only.
+- When a claim depends on a specific visual region, add crop_box to its evidence_index entry using page PNG pixel coordinates or percentage coordinates; the server will generate the actual crop image.
+
+PHASE 2 - Discipline Review:
+- arquitetura-urbanismo -> ${SANDBOX_OUTPUT_PATH}/findings-arquitetura-urbanismo.json
+- especialidades -> ${SANDBOX_OUTPUT_PATH}/findings-especialidades.json
+- acessibilidades-seguranca -> ${SANDBOX_OUTPUT_PATH}/findings-acessibilidades-seguranca.json
+- instrucao-administrativa -> ${SANDBOX_OUTPUT_PATH}/findings-instrucao-administrativa.json
+- legalizacao -> ${SANDBOX_OUTPUT_PATH}/findings-legalizacao.json when the dossier or notice exposes legalization issues
+
+PHASE 3 - Compliance Cross-Check:
+- National/legal cross-check -> ${SANDBOX_OUTPUT_PATH}/national_compliance.json
+- Municipal/procedural cross-check -> ${SANDBOX_OUTPUT_PATH}/municipal_compliance.json
+
+PHASE 4 - Merge & Draft:
+- ${SANDBOX_OUTPUT_PATH}/draft_corrections.json
+- ${SANDBOX_OUTPUT_PATH}/draft_corrections.md
+- ${SANDBOX_OUTPUT_PATH}/review_summary.json
+- validation_report.json is generated by the server post-processor; do not hand-author it unless explicitly repairing validation artifacts.
+- Prefer the canonical Viseu checklist shape in draft_corrections.json with: schema_version, review_outcome, total_findings, blocking_issues, source_needed_items, depends_on_pdmv_items, additional_corrections, review_outcome_rationale.
+- Each blocking_issue should include: title, description, priority, source_scope, source_findings, optional visual_note_summary, and 1-3 sheet_refs when grounded.
+- Each blocking_issue should include evidence_refs[] copied from its supporting findings when project evidence is involved.
+- Each sheet_ref should include: page, desenho, title, page_png_path, title_block_png_path, visual_note.
+- Promote an item to blocking_issue only when it has both legal support and concrete project evidence; otherwise keep it outside blockers.
+
+CRITICAL RULES:
+- For parking, soil class/category, PDMV constraints, and current NIP packaging, do NOT use SOURCE_NEEDED or depends-on-pdmv. Those topics are pre-validated and must cite official_verified corpus sources.
+- Keep SOURCE_NEEDED and depends-on-pdmv only for municipal topics outside the validated corpus.
+- Never invent sheet/page mappings. Use sheet-manifest.json as the only ground truth for page, desenho, title, and title-block paths.
+- project_understanding.json is mandatory and must exist before Phase 2 findings or Phase 4 merge.
+- Every project-dependent finding must cite project_understanding.json evidence_index ids in evidence_refs; legal source citations alone are not project evidence.
+- The server will demote project-dependent findings without valid evidence_refs to inconclusive, even if evidence_status says confirmed.
+- Do not present inferred measurements as facts. Use only declared/cotated values with evidence_refs, or mark the item inconclusive / needs-human-validation.
+- Missing support is not a confirmed violation; classify it as inconclusive or needs_official_source.
+- Finish only when all required files exist.`;
+  }
+
+  if (flowType === 'corrections-analysis') {
+    return `You are analyzing municipal corrections for an urban licensing process in ${city}, Portugal.
+
+PROJECT FILES: ${SANDBOX_FILES_PATH}/
+OUTPUT DIRECTORY: ${SANDBOX_OUTPUT_PATH}/
+MUNICIPALITY: ${city}
+${addressLine}
+${preExtractedNotice}
+
+AVAILABLE SOURCES:
+- portugal-urban-planning
+- viseu-corrections-flow
+- viseu-municipal-regulations
+- page-viewer skill
+- Operational index: ${VISEU_OPERATIONAL_INDEX_PATH}
+- Validated corpus manifest: ${VISEU_CORPUS_MANIFEST_PATH}
+- Reserved namespace for future PT municipal live research: ${FUTURE_PORTUGAL_MUNICIPAL_RESEARCH_PATH}
+
+OBJECTIVE:
+1. Read the municipal correction notice or dispatch.
+2. Reuse or build the sheet manifest.
+3. Write project_understanding.json.
+4. Cross-check each item against national, municipal, and procedural sources.
+5. Categorize each item with the Viseu taxonomy and required metadata.
+6. Generate clarification questions for the requerente / project team.
+
+The server has already validated the mandatory Viseu corpus for this run.
+Use only official_verified municipal/PDMV/NIP sources for the mandatory Viseu topics.
+Do not reopen those topics as SOURCE_NEEDED or depends-on-pdmv.
+Separate confirmed violations from documental gaps, source-needed items, and inconclusive items.
+
+REQUIRED METADATA FOR EVERY JSON ITEM:
+- process_type
+- review_area
+- finding_category
+- source_scope
+- source_doc
+- article_or_section
+- source_reference
+- verification_status
+- evidence_status
+- evidence_refs[] when the item depends on project facts, drawing content, declared values, missing sheets/documents, typology, parking, implantation, scale, or area tables
+- Optional for visually grounded findings: sheet_refs[] with page/desenho/title/page_png_path/title_block_png_path/visual_note
+- determination_status using one of: confirmed_non_compliance, document_missing_or_incomplete, needs_official_source, inconclusive
+
+Use only these finding categories:
+${VISEU_FINDING_CATEGORY_LINES}
+
+Use only these source scopes:
+${VISEU_SOURCE_SCOPE_LINES}
+
+Do NOT generate the final response package in this phase.
+validation_report.json is generated by the server post-processor; focus on producing well-grounded source artifacts.
+If legal basis or project evidence is insufficient, do NOT state a confirmed violation.
+project_understanding.json is mandatory and should ground program, typology, implantation, parking, legends, and area tables before categorization.
+Numeric, area, distance, slope, and count values in project_understanding.json must carry value_type and usable_for_compliance.
+When a finding depends on a specific visual region, its project_understanding evidence entry should include crop_box so the server can create a real preview crop.
+When a finding is likely to support a blocking issue, preserve the relevant sheet/page reference from sheet-manifest.json.
+Every project-dependent finding must cite one or more project_understanding.json evidence_index ids in evidence_refs. Do not use source_reference as a substitute for project evidence.
+The server will demote project-dependent findings without valid evidence_refs to inconclusive, even if evidence_status says confirmed.
+Never invent measurements or cite visual impressions as measured values. If a distance, area, slope, or count is not declared/cotated in the submitted documents, mark it inconclusive or ask a clarification question.
+Write clarification prompts to applicant_questions.json. If you need backward compatibility with older artifacts, contractor_questions.json may also be present, but applicant_questions.json is canonical.`;
+  }
+
+  return `You have a session directory with analysis artifacts for a municipal licensing process in ${city}, Portugal.
+
+PROJECT FILES: ${SANDBOX_FILES_PATH}/
+OUTPUT DIRECTORY: ${SANDBOX_OUTPUT_PATH}/
+MUNICIPALITY: ${city}
+${addressLine}
+
+The output directory contains the analysis artifacts plus clarification answers from the requerente / project team.
+Use project_understanding.json whenever response scoping depends on program, typology, implantation, parking, or area schedules.
+
+${contractorAnswersJson ? `ANSWER SET (also written to applicant_answers.json):
+${contractorAnswersJson}` : ''}
+
+Use the viseu-corrections-complete skill to generate:
+1. response_letter.md - formal reply to the municipality
+2. professional_scope.md - work split by discipline and responsible party
+3. corrections_report.md - status table for each correction item
+4. sheet_annotations.json - per-sheet change list
+Use the viseu-corrections-pdf skill only as a formatting contract for the derived PDF artifact.
+
+Rules:
+- Cite official sources wherever available.
+- Mark assumptions explicitly.
+- Preserve source_scope, source_doc, article_or_section, source_reference, and verification_status traceability for every correction item you address.
+- Treat response_letter.md as the authored source document; response_letter.pdf is a server-rendered derivative created after this run.
+- Do not author a second letter variant for PDF output.
+- Keep the rest of the artifact contract unchanged when response_letter.pdf is added alongside response_letter.md.`;
+}
 
 export function buildPrompt(
   flowType: InternalFlowType,
@@ -110,224 +406,57 @@ export function buildPrompt(
   contractorAnswersJson?: string,
   preExtracted?: boolean,
 ): string {
-  const addressLine = address ? `ADDRESS: ${address}` : '';
-
-  // Pre-extraction notice — PNGs and title blocks are already ready
-  const preExtractedNotice = preExtracted ? `
-PRE-EXTRACTED DATA:
-- Page PNGs are ALREADY extracted at full DPI in ${SANDBOX_FILES_PATH}/pages-png/
-- Title block crops are ALREADY in ${SANDBOX_FILES_PATH}/title-blocks/
-- Do NOT run extract-pages.sh or crop-title-blocks.sh — they are already done.
-- Go straight to reading the cover sheet and building the sheet manifest.
-` : '';
-
-  // Build city routing instruction
-  const citySkillName = getCitySkillName(city);
-  const onboarded = isCityOnboarded(city);
-
-  if (flowType === 'city-review') {
-    const cityRouting = onboarded
-      ? `CITY ROUTING: ${city} is an onboarded city with a dedicated skill (${citySkillName}).
-Use the ${citySkillName} skill reference files for ALL city-level research in Phase 3B.
-Do NOT use adu-city-research. Do NOT use WebSearch or WebFetch for city rules.
-The ${citySkillName} skill has complete, verified data — it is better than any web search.`
-      : `CITY ROUTING: ${city} is NOT an onboarded city. Use adu-city-research for city rules.`;
-
-    return `You are the ORCHESTRATOR for an ADU plan review. You coordinate subagents — you do NOT read images or large files yourself.
-
-PROJECT FILES: ${SANDBOX_FILES_PATH}/
-OUTPUT DIRECTORY: ${SANDBOX_OUTPUT_PATH}/
-CITY: ${city}
-${addressLine}
-
-MANIFEST: sheet-manifest.json already exists in output/. Read it to understand the sheet layout. Skip Phase 1 (manifest building) entirely.
-
-${cityRouting}
-
-YOUR JOB: Coordinate 4 phases using subagents. You NEVER read PNG images. You NEVER ingest large JSON payloads. You ONLY spawn subagents and verify output files exist.
-
-PHASE 2 — Sheet Review:
-Spawn 5 discipline subagents. Each subagent gets:
-- A list of sheet PNGs to read (from the manifest — files are at ${SANDBOX_FILES_PATH}/pages-png/page-XX.png)
-- The relevant checklist reference file path (from adu-plan-review skill)
-- The sheet manifest path for context
-- Instructions to WRITE findings to ${SANDBOX_OUTPUT_PATH}/findings-{discipline}.json
-
-Subagent grouping (read the manifest to map sheet IDs to page numbers):
-- arch-a: Cover sheet + floor plans → write output/findings-arch-a.json
-- arch-b: Elevations + sections + details → write output/findings-arch-b.json
-- site-civil: Site plan + energy/code compliance → write output/findings-site-civil.json
-- structural: Foundation + framing + structural details → write output/findings-structural.json
-- mep-energy: Plumbing + mechanical + electrical + Title 24 → write output/findings-mep-energy.json
-
-Each subagent MUST write its findings JSON file and return ONLY a short summary (e.g., "Done, wrote 12 findings to findings-arch-a.json"). Do NOT return the full findings.
-
-After spawning, call TaskOutput to confirm completion. Then verify files exist with Glob. Do NOT read the findings files yourself.
-
-PHASE 3 — Code Compliance (spawn 2 subagents concurrently):
-- 3A (State): Read findings-*.json files from ${SANDBOX_OUTPUT_PATH}/ + load california-adu reference files. For each FAIL/UNCLEAR finding, verify against state law. Write ${SANDBOX_OUTPUT_PATH}/state_compliance.json. Return short summary only.
-- 3B (City): Read findings-*.json files from ${SANDBOX_OUTPUT_PATH}/ + load ${citySkillName || 'adu-city-research'} reference files. Check against city-specific rules. Write ${SANDBOX_OUTPUT_PATH}/city_compliance.json. Return short summary only.
-
-PHASE 4 — Merge & Draft (spawn 1 subagent):
-This subagent reads ALL artifact files from disk:
-- ${SANDBOX_OUTPUT_PATH}/sheet-manifest.json
-- ${SANDBOX_OUTPUT_PATH}/findings-*.json (5 files)
-- ${SANDBOX_OUTPUT_PATH}/state_compliance.json
-- ${SANDBOX_OUTPUT_PATH}/city_compliance.json
-
-Apply filter rules from adu-plan-review skill:
-- Include findings confirmed by state AND/OR city code with code citation
-- Flag LOW visual confidence findings with [VERIFY]
-- DROP findings with no code basis (no false positives)
-- Use [REVIEWER: ...] blanks for structural/engineering/judgment items
-- DROP subjective findings — ADUs subject to objective standards only (Gov. Code 66314(b)(1))
-
-Write these 3 files:
-- ${SANDBOX_OUTPUT_PATH}/draft_corrections.json
-- ${SANDBOX_OUTPUT_PATH}/draft_corrections.md
-- ${SANDBOX_OUTPUT_PATH}/review_summary.json
-
-CRITICAL — SUBAGENT COLLECTION:
-After spawning subagents, you MUST IMMEDIATELY call TaskOutput to wait for completion.
-Do NOT generate a text-only response while subagents are pending — always include a TaskOutput call.
-Pattern: spawn Task(s) → immediately call TaskOutput in the same response.
-
-CRITICAL RULES:
-- Every correction MUST have a specific code citation. No false positives.
-- ADUs are subject to OBJECTIVE standards only (Gov. Code 66314(b)(1)).
-- State law preempts city rules — if city is more restrictive, flag the conflict.
-- Use [REVIEWER: ...] blanks for structural, engineering, and judgment items.
-
-PDF GENERATION: Do NOT generate PDFs. Do NOT install reportlab, puppeteer, or any PDF tools.
-Your job ends at draft_corrections.md.
-
-COMPLETION: Verify ALL these files exist in output/:
-- sheet-manifest.json (pre-loaded)
-- findings-arch-a.json, findings-arch-b.json, findings-site-civil.json, findings-structural.json, findings-mep-energy.json
-- state_compliance.json, city_compliance.json
-- draft_corrections.json, draft_corrections.md, review_summary.json`;
-  }
-
-  if (flowType === 'corrections-analysis') {
-    const cityRouting = onboarded
-      ? `CITY ROUTING: ${city} is an onboarded city with a dedicated skill (${citySkillName}).
-For Phase 3B (city research), use the ${citySkillName} skill reference files INSTEAD of adu-city-research.
-Do NOT use WebSearch or WebFetch for city rules — the ${citySkillName} skill has complete, verified data.
-Load ${citySkillName} reference files and check corrections against city-specific amendments, standard details, and IBs.
-Skip Phase 3.5 (city extraction) and Browser Fallback entirely — they are not needed for onboarded cities.`
-      : `CITY ROUTING: ${city} is NOT an onboarded city. Use adu-city-research for Phase 3B city rules (Discovery → Extraction → optional Browser Fallback).`;
-
-    return `You are analyzing corrections for an ADU permit on behalf of the contractor.
-
-PROJECT FILES: ${SANDBOX_FILES_PATH}/
-CITY: ${city}
-${addressLine}
-${preExtractedNotice}
-${cityRouting}
-
-The project-files directory contains:
-- A plan binder PDF (the original submittal)
-- Corrections letter PNG files (the city's correction items — may be multiple pages)
-
-MANIFEST: sheet-manifest.json already exists at ${SANDBOX_OUTPUT_PATH}/sheet-manifest.json. Skip Phase 2 (manifest building) entirely — do NOT read the cover sheet or title blocks for indexing.
-
-Use the adu-corrections-flow skill to:
-1. Read the corrections letter (PNG files)
-2. Skip — manifest is pre-built
-3. Research state + city codes for each correction item
-4. Categorize each correction (contractor fix vs needs engineer vs already compliant)
-5. Generate contractor questions where items need clarification
-
-Write all output files to ${SANDBOX_OUTPUT_PATH}/
-
-IMPORTANT:
-- Follow the adu-corrections-flow skill instructions exactly
-- Write all 8 output files (sheet-manifest.json is already done)
-- Do NOT generate Phase 5 deliverables (response letter, scope, etc.)
-- Do NOT read plan sheet PNGs in your main context — use subagents for sheet viewing
-- Stop after writing contractor_questions.json`;
-  }
-
-  // corrections-response (Phase 2)
-  return `You have a session directory with corrections analysis artifacts and contractor answers.
-
-PROJECT FILES: ${SANDBOX_FILES_PATH}/
-OUTPUT DIRECTORY: ${SANDBOX_OUTPUT_PATH}/
-CITY: ${city}
-${addressLine}
-
-The project-files/output/ directory contains files from the analysis phase:
-- corrections_parsed.json — raw correction items with original wording
-- corrections_categorized.json — items with categories + research context
-- sheet-manifest.json — sheet ID to page number mapping
-- state_law_findings.json — per-code-section lookups
-- contractor_questions.json — what questions were asked
-- contractor_answers.json — the contractor's responses
-
-${contractorAnswersJson ? `CONTRACTOR ANSWERS (also written to contractor_answers.json):
-${contractorAnswersJson}` : ''}
-
-Use the adu-corrections-complete skill to generate the response package.
-
-Read the analysis files and generate ALL FOUR deliverables:
-1. response_letter.md — professional letter to the building department
-2. professional_scope.md — work breakdown grouped by professional
-3. corrections_report.md — status dashboard with checklist
-4. sheet_annotations.json — per-sheet breakdown of changes
-
-Write ALL output files to ${SANDBOX_OUTPUT_PATH}/
-Follow the adu-corrections-complete skill instructions exactly.`;
+  assertSupportedRuntimeCity(city);
+  return buildViseuOperationalPrompt(flowType, city, address, contractorAnswersJson, preExtracted);
 }
 
 // --- System Prompt Appends ---
 
-export const CITY_REVIEW_SYSTEM_APPEND = `You are working on CrossBeam, an ADU permit assistant for California.
-You are reviewing an ADU plan submittal from the city's perspective.
-Your job is to coordinate subagents that identify code violations and produce a draft corrections letter.
+export const VISEU_CITY_REVIEW_SYSTEM_APPEND_V2 = `You are working on CrossBeam for Municipio de Viseu.
+You are coordinating a municipal urban licensing review.
 
-CONTEXT MANAGEMENT — MANDATORY:
-- You are a PURE COORDINATOR. You NEVER read images. You NEVER read large JSON files.
-- NEVER read any PNG files (page-XX.png, title-block-XX.png) in your main context.
-- ALL image reading and analysis happens in subagents that write results to files on disk.
-- ALL merging and filtering happens in a dedicated Phase 4 subagent.
-- Your main context handles ONLY: reading the manifest (small JSON), spawning subagents, verifying output files exist via Glob.
-- After spawning subagents, call TaskOutput to confirm completion. Subagents return SHORT summaries only — do NOT read their output files yourself.
-- If you read ANY PNG or large JSON file in your main context, you WILL run out of context and fail.
+CONTEXT MANAGEMENT - MANDATORY:
+- Stay in orchestrator mode in the main context.
+- Use subagents for plan-page reading and discipline-specific review.
+- Never invent legal or municipal requirements.
+- The mandatory Viseu corpus was validated before launch; use only official_verified municipal/PDMV/NIP sources for those topics.
+- Every JSON artifact item must include process_type, review_area, finding_category, source_scope, source_doc, article_or_section, source_reference, verification_status, and evidence_status.
+- Every project-dependent conclusion must cite project_understanding.json evidence_index ids in evidence_refs. Legal citations are not a substitute for project evidence.
+- The server will demote project-dependent conclusions without valid evidence_refs to inconclusive, even if evidence_status says confirmed.
+- Never invent measurements; use declared/cotated values or mark the item inconclusive / needs-human-validation.`;
 
-CRITICAL RULES:
-- NO false positives. Every correction MUST have a specific code citation.
-- Drop findings that lack code basis.
-- ADUs can ONLY be subject to objective standards (Gov. Code 66314(b)(1)).
-- State law preempts city rules.
-- Do NOT generate PDFs. Do NOT install Python, reportlab, or any PDF tools. Your job ends at draft_corrections.md.`;
+export const VISEU_CORRECTIONS_SYSTEM_APPEND_V2 = `You are working on CrossBeam for Municipio de Viseu.
+Use the available skills to analyze correction notices, cross-check official sources,
+and prepare a response package for an urban licensing process.
 
-export const CORRECTIONS_SYSTEM_APPEND = `You are working on CrossBeam, an ADU permit assistant for California.
-Use available skills to research codes, analyze plans, and generate professional output.
-Always write output files to the output directory provided in the prompt.
+MANDATORY:
+- Treat official national and municipal sources as the only authority.
+- The mandatory Viseu corpus was validated before launch; use only official_verified municipal/PDMV/NIP sources for those topics.
+- Mark unsupported statements as [SOURCE NEEDED] only when they are outside the validated corpus.
+- Keep large image reading inside subagents.
+- Use the Viseu finding categories and metadata schema exactly as instructed in the flow prompt.
+- Every project-dependent conclusion must cite project_understanding.json evidence_index ids in evidence_refs. Legal citations are not a substitute for project evidence.
+- The server will demote project-dependent conclusions without valid evidence_refs to inconclusive, even if evidence_status says confirmed.
+- Never invent measurements; use declared/cotated values or mark the item inconclusive / needs-human-validation.`;
 
-You are analyzing corrections for an ADU permit on behalf of a contractor.
-Your goal is to categorize each correction item, research the relevant codes,
-and prepare materials for a professional response.
+export const VISEU_RESPONSE_SYSTEM_APPEND_V2 = `You are working on CrossBeam for Municipio de Viseu.
+Generate a formal and actionable response package for a municipal licensing process.
 
-CONTEXT MANAGEMENT — MANDATORY:
-- NEVER read full-size plan sheet PNGs (page-XX.png) in your main context. They are large images that will fill your context window.
-- Read the corrections letter PNGs directly (1-3 small pages — that's fine).
-- Read the cover sheet (page-01.png) for the sheet index — that's fine.
-- ALL plan sheet viewing MUST happen in subagents. Spawn subagents that each read only their assigned 2-3 sheet PNGs.
-- Your main context handles orchestration: read corrections, build manifest, spawn research subagents, merge results, write output files.`;
+MANDATORY:
+- Cite official sources where available.
+- Make assumptions explicit.
+- Keep the tone administrative and implementation-ready.
+- Preserve source_scope, source_doc, article_or_section, source_reference, and verification_status traceability for every correction item you address.
+- Treat response_letter.md as the single authored letter; response_letter.pdf is a rendered derivative.`;
 
-export const RESPONSE_SYSTEM_APPEND = `You are working on CrossBeam, an ADU permit assistant for California.
-Use available skills to generate professional deliverables.
-Always write output files to the output directory provided in the prompt.
-
-You are generating a corrections response package for a contractor.
-You have the analysis artifacts and the contractor's answers to clarifying questions.
-Generate professional, code-cited deliverables.`;
-
-export function getSystemAppend(flowType: InternalFlowType): string {
+export function getSystemAppend(flowType: InternalFlowType, _city: string): string {
+  assertSupportedRuntimeCity(_city);
   switch (flowType) {
-    case 'city-review': return CITY_REVIEW_SYSTEM_APPEND;
-    case 'corrections-analysis': return CORRECTIONS_SYSTEM_APPEND;
-    case 'corrections-response': return RESPONSE_SYSTEM_APPEND;
+    case 'city-review':
+      return VISEU_CITY_REVIEW_SYSTEM_APPEND_V2;
+    case 'corrections-analysis':
+      return VISEU_CORRECTIONS_SYSTEM_APPEND_V2;
+    case 'corrections-response':
+      return VISEU_RESPONSE_SYSTEM_APPEND_V2;
   }
 }

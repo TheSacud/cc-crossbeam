@@ -42,7 +42,7 @@ export function ContractorDashboard() {
     return (
       <div className="flex flex-col items-center justify-center py-16 space-y-3">
         <InboxIcon className="w-10 h-10 text-muted-foreground/40" />
-        <p className="text-muted-foreground font-body">No corrections analyses yet.</p>
+        <p className="text-muted-foreground font-body">Ainda não existem análises de aperfeiçoamento.</p>
       </div>
     )
   }
@@ -51,20 +51,18 @@ export function ContractorDashboard() {
 
   return (
     <div className="space-y-6 animate-fade-up">
-      {/* Header */}
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
           <HardHatIcon className="w-5 h-5 text-primary" />
         </div>
         <div>
-          <h2 className="heading-card text-foreground">Your Projects</h2>
+          <h2 className="heading-card text-foreground">Equipa projetista</h2>
           <p className="text-sm text-muted-foreground font-body">
-            {projects.length} correction{projects.length !== 1 ? 's' : ''} analysis across {cities.size} cit{cities.size !== 1 ? 'ies' : 'y'}
+            {projects.length} notificação{projects.length !== 1 ? 'es' : ''} em análise em {cities.size} município{cities.size !== 1 ? 's' : ''}
           </p>
         </div>
       </div>
 
-      {/* Project Grid */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {projects.map(project => {
           const status = getStatusConfig(project.status)
@@ -72,7 +70,6 @@ export function ContractorDashboard() {
             <Link key={project.id} href={`/projects/${project.id}`}>
               <Card className="hover-lift shadow-[0_8px_32px_rgba(28,25,23,0.08)] border-border/50 cursor-pointer h-full">
                 <CardContent className="p-6 space-y-4">
-                  {/* ADU Miniature */}
                   <div className="relative w-full h-28 flex items-center justify-center">
                     <Image
                       src={getAduImage(project.id)}
@@ -84,7 +81,6 @@ export function ContractorDashboard() {
                     />
                   </div>
 
-                  {/* Project Info */}
                   <div className="space-y-1">
                     <h3 className="font-semibold text-foreground font-body text-sm leading-tight">
                       {project.project_name}
@@ -94,7 +90,6 @@ export function ContractorDashboard() {
                     </p>
                   </div>
 
-                  {/* Status + Time */}
                   <div className="flex items-center justify-between pt-2 border-t border-border/50">
                     <Badge
                       variant={status.variant}

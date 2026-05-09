@@ -3,13 +3,20 @@ import { z } from 'zod';
 import {
   updateProjectStatus,
   getProjectFiles,
-  getContractorAnswers,
+  getApplicantAnswers,
   getPhase1Outputs,
   getProject,
+  insertMessage,
 } from '../services/supabase.js';
 import { runCrossBeamFlow } from '../services/sandbox.js';
 import { extractPdfForProject } from '../services/extract.js';
-import type { InternalFlowType } from '../utils/config.js';
+import { validateMunicipalCorpusForFlow } from '../services/municipal-corpus.js';
+import { postProcessLatestOutput } from '../services/output-postprocess.js';
+import { generateResponseLetterPdfForProject } from '../services/response-pdf.js';
+import {
+  assertSupportedRuntimeCity,
+  type InternalFlowType,
+} from '../utils/config.js';
 
 export const generateRouter = Router();
 
@@ -39,6 +46,12 @@ generateRouter.post('/', async (req, res) => {
   });
 });
 
+export function resolveSupportedProjectCity(project: { city: string | null | undefined }): string {
+  const city = project.city?.trim() || null;
+  assertSupportedRuntimeCity(city);
+  return city;
+}
+
 async function processGeneration(
   projectId: string,
   userId: string,
@@ -51,8 +64,10 @@ async function processGeneration(
 
     // Get project details (city, address)
     const project = await getProject(projectId);
-    const city = project.city || 'Unknown';
+    const city = resolveSupportedProjectCity(project);
     const address = project.project_address || undefined;
+
+    validateMunicipalCorpusForFlow(city, flowType);
 
     // Set initial processing status
     if (flowType === 'corrections-analysis') {
@@ -88,13 +103,13 @@ async function processGeneration(
       file_type: r.file_type,
     }));
 
-    // For corrections-response: also need Phase 1 outputs + contractor answers
-    let contractorAnswersJson: string | undefined;
+    // For corrections-response: also need Phase 1 outputs + applicant answers
+    let applicantAnswersJson: string | undefined;
     let phase1Artifacts: Record<string, unknown> | undefined;
 
     if (flowType === 'corrections-response') {
-      const answers = await getContractorAnswers(projectId);
-      contractorAnswersJson = JSON.stringify(answers, null, 2);
+      const answers = await getApplicantAnswers(projectId);
+      applicantAnswersJson = JSON.stringify(answers, null, 2);
       const phase1 = await getPhase1Outputs(projectId);
       phase1Artifacts = phase1?.raw_artifacts as Record<string, unknown> | undefined;
     }
@@ -118,9 +133,41 @@ async function processGeneration(
       supabaseKey,
       projectId,
       userId,
-      contractorAnswersJson,
+      contractorAnswersJson: applicantAnswersJson,
       phase1Artifacts,
     });
+
+    try {
+      const postProcessResult = await postProcessLatestOutput(projectId, flowType);
+      if (!postProcessResult.updated && postProcessResult.reason) {
+        await insertMessage(projectId, 'system', `Skipped output post-processing: ${postProcessResult.reason}`);
+      }
+    } catch (postProcessError) {
+      const postProcessMessage = postProcessError instanceof Error ? postProcessError.message : 'Unknown output post-processing error';
+      console.warn(`Output post-process failed for project ${projectId}:`, postProcessError);
+      await insertMessage(
+        projectId,
+        'system',
+        `Output post-processing failed; raw artifacts were preserved. Reason: ${postProcessMessage}`,
+      );
+    }
+
+    if (flowType === 'corrections-response') {
+      try {
+        const pdfResult = await generateResponseLetterPdfForProject(projectId, userId);
+        if (!pdfResult.generated && pdfResult.reason) {
+          await insertMessage(projectId, 'system', `Skipped response_letter.pdf generation: ${pdfResult.reason}`);
+        }
+      } catch (pdfError) {
+        const pdfMessage = pdfError instanceof Error ? pdfError.message : 'Unknown PDF rendering error';
+        console.warn(`Response PDF post-process failed for project ${projectId}:`, pdfError);
+        await insertMessage(
+          projectId,
+          'system',
+          `response_letter.pdf post-process failed; markdown artifacts were preserved. Reason: ${pdfMessage}`,
+        );
+      }
+    }
 
     const duration = ((Date.now() - startTime) / 1000 / 60).toFixed(1);
     console.log(`Generation completed for project ${projectId} in ${duration} minutes`);

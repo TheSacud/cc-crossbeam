@@ -1,0 +1,24 @@
+[
+  {
+    "item_id": "VC1-2",
+    "process_type": "licenciamento de obras de alteracao e ampliacao com legalizacao parcial",
+    "review_area": "acessibilidades-seguranca",
+    "finding_category": "REGULATORY_NON_COMPLIANCE",
+    "source_scope": "national",
+    "source_reference": "Regime nacional de acessibilidades [SOURCE NEEDED exact article]",
+    "evidence_status": "source-needed",
+    "status": "open",
+    "notes": "National accessibility regime is relevant, but the exact article extract is not yet loaded in the repo."
+  },
+  {
+    "item_id": "VC1-5",
+    "process_type": "licenciamento de obras de alteracao e ampliacao com legalizacao parcial",
+    "review_area": "especialidades",
+    "finding_category": "NEEDS_SPECIALTY_INPUT",
+    "source_scope": "national",
+    "source_reference": "RJUE baseline",
+    "evidence_status": "needs-human-validation",
+    "status": "open",
+    "notes": "Corrective works may trigger additional specialty projects, but the final specialty set depends on the actual legalization scope."
+  }
+]

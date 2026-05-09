@@ -12,7 +12,6 @@ export function PersonaToggle({ persona }: PersonaToggleProps) {
   return (
     <div className="flex justify-center">
       <div className="relative inline-flex rounded-full bg-muted/60 p-1 border border-border/50">
-        {/* Sliding indicator */}
         <div
           className={cn(
             'absolute top-1 bottom-1 rounded-full bg-primary shadow-md transition-all duration-200 ease-out',
@@ -20,7 +19,6 @@ export function PersonaToggle({ persona }: PersonaToggleProps) {
           )}
         />
 
-        {/* Contractor button */}
         <button
           onClick={() => setPersona('contractor')}
           className={cn(
@@ -31,10 +29,9 @@ export function PersonaToggle({ persona }: PersonaToggleProps) {
           )}
         >
           <HardHatIcon className="w-4 h-4" />
-          Contractor
+          Equipa projetista
         </button>
 
-        {/* City Reviewer button */}
         <button
           onClick={() => setPersona('city')}
           className={cn(
@@ -45,7 +42,7 @@ export function PersonaToggle({ persona }: PersonaToggleProps) {
           )}
         >
           <Building2Icon className="w-4 h-4" />
-          City Reviewer
+          Município
         </button>
       </div>
     </div>

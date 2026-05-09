@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Viseu Official Corpus Manifest",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "version",
+    "municipality",
+    "skill",
+    "generated_at",
+    "required_topics_by_flow",
+    "sources"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "version": {
+      "type": "string"
+    },
+    "municipality": {
+      "type": "string"
+    },
+    "skill": {
+      "type": "string"
+    },
+    "generated_at": {
+      "type": "string"
+    },
+    "required_topics_by_flow": {
+      "type": "object",
+      "required": [
+        "city-review",
+        "corrections-analysis",
+        "corrections-response"
+      ],
+      "properties": {
+        "city-review": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "corrections-analysis": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "corrections-response": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "key",
+          "source_url",
+          "source_doc",
+          "official_doc_id",
+          "checked_at",
+          "article_or_section",
+          "verification_status",
+          "applies_to",
+          "topics",
+          "required_for",
+          "file"
+        ],
+        "properties": {
+          "key": { "type": "string" },
+          "source_url": { "type": "string" },
+          "source_doc": { "type": "string" },
+          "official_doc_id": { "type": "string" },
+          "checked_at": { "type": "string" },
+          "article_or_section": { "type": "string" },
+          "verification_status": {
+            "type": "string",
+            "enum": [
+              "official_verified",
+              "paired_source_required",
+              "missing_required_source"
+            ]
+          },
+          "applies_to": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "topics": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "required_for": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "city-review",
+                "corrections-analysis",
+                "corrections-response"
+              ]
+            }
+          },
+          "file": { "type": "string" },
+          "notes": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

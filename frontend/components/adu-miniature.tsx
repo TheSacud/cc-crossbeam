@@ -3,34 +3,10 @@
 import Image from 'next/image'
 import { useRandomAdu } from '@/hooks/use-random-adu'
 
-// All available ADU exterior images — 16 keyed transparents + 7 originals = 23 total
-const ADU_EXTERIORS = [
-  // Keyed ADU series (Nano Banana generated)
-  '/images/adu/adu-01-2story-garage-transparent.png',
-  '/images/adu/adu-02-studio-greenroof-transparent.png',
-  '/images/adu/adu-03-garage-conversion-transparent.png',
-  '/images/adu/adu-04-jadu-attached-transparent.png',
-  '/images/adu/adu-05-modern-box-transparent.png',
-  '/images/adu/adu-06-spanish-style-transparent.png',
-  '/images/adu/adu-07-aframe-transparent.png',
-  '/images/adu/adu-08-prefab-modular-transparent.png',
-  // Cameron real-project series
-  '/images/adu/cameron-01-longbeach-transparent.png',
-  '/images/adu/cameron-03-lakewood-transparent.png',
-  '/images/adu/cameron-04-whittier-2story-transparent.png',
-  '/images/adu/cameron-05-lakewood-porch-transparent.png',
-  '/images/adu/cameron-06-sandimas-butterfly-transparent.png',
-  '/images/adu/cameron-09-signalhill-cottage-transparent.png',
-  '/images/adu/cameron-09-signalhill-cottage-v2-transparent.png',
-  '/images/adu/cameron-10-downey-lshape-transparent.png',
-  // Original exterior series
-  '/images/adu/exterior-longbeach-modern.png',
-  '/images/adu/exterior-whittier-2story.png',
-  '/images/adu/exterior-lakewood-porch.png',
-  '/images/adu/exterior-sandimas-raised.png',
-  '/images/adu/exterior-signalhill-cottage.png',
-  '/images/adu/exterior-garage-2story.png',
-  '/images/adu/exterior-modern-box.png',
+const DEMO_VISUALS = [
+  '/images/viseu/review-board.svg',
+  '/images/viseu/corrections-stack.svg',
+  '/images/viseu/response-package.svg',
 ]
 
 const VARIANT_CONFIG = {
@@ -42,8 +18,8 @@ const VARIANT_CONFIG = {
 
 interface AduMiniatureProps {
   variant: keyof typeof VARIANT_CONFIG
-  src?: string             // Override random selection with specific image
-  videoSrc?: string        // When ready: provide MP4 path to switch to <video> loop
+  src?: string
+  videoSrc?: string
   alt?: string
   className?: string
 }
@@ -52,14 +28,13 @@ export function AduMiniature({
   variant,
   src,
   videoSrc,
-  alt = 'ADU architectural miniature',
+  alt = 'Ilustracao do fluxo de licenciamento',
   className = '',
 }: AduMiniatureProps) {
-  const randomSrc = useRandomAdu(ADU_EXTERIORS)
+  const randomSrc = useRandomAdu(DEMO_VISUALS)
   const imageSrc = src || randomSrc
   const config = VARIANT_CONFIG[variant]
 
-  // Video swap: when videoSrc is provided, render <video> instead of <Image>
   if (videoSrc) {
     return (
       <div className={`flex items-center justify-center ${config.className} ${className}`}>

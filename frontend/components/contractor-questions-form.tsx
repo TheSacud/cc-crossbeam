@@ -8,15 +8,15 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Loader2Icon, SendIcon } from 'lucide-react'
-import type { ContractorAnswer } from '@/types/database'
+import type { ApplicantAnswer } from '@/types/database'
 
-interface ContractorQuestionsFormProps {
+interface ApplicantQuestionsFormProps {
   projectId: string
   userId: string
 }
 
-export function ContractorQuestionsForm({ projectId, userId }: ContractorQuestionsFormProps) {
-  const [questions, setQuestions] = useState<ContractorAnswer[]>([])
+export function ApplicantQuestionsForm({ projectId, userId }: ApplicantQuestionsFormProps) {
+  const [questions, setQuestions] = useState<ApplicantAnswer[]>([])
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -25,16 +25,16 @@ export function ContractorQuestionsForm({ projectId, userId }: ContractorQuestio
   useEffect(() => {
     supabase
       .schema('crossbeam')
-      .from('contractor_answers')
+      .from('applicant_answers')
       .select('*')
       .eq('project_id', projectId)
       .order('created_at', { ascending: true })
       .then(({ data }) => {
         if (data) {
-          setQuestions(data as ContractorAnswer[])
+          setQuestions(data as ApplicantAnswer[])
           // Pre-fill existing answers
           const existing: Record<string, string> = {}
-          data.forEach((q: ContractorAnswer) => {
+          data.forEach((q: ApplicantAnswer) => {
             if (q.answer_text) existing[q.id] = q.answer_text
           })
           setAnswers(existing)
@@ -51,7 +51,7 @@ export function ContractorQuestionsForm({ projectId, userId }: ContractorQuestio
       if (value) {
         await supabase
           .schema('crossbeam')
-          .from('contractor_answers')
+          .from('applicant_answers')
           .update({ answer_text: value, is_answered: true })
           .eq('id', q.id)
       }
@@ -96,7 +96,7 @@ export function ContractorQuestionsForm({ projectId, userId }: ContractorQuestio
                 <Textarea
                   value={answers[q.id] || ''}
                   onChange={(e) => setAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
-                  placeholder="Your answer..."
+                  placeholder="Resposta..."
                   className="font-body"
                   rows={3}
                 />
@@ -107,7 +107,7 @@ export function ContractorQuestionsForm({ projectId, userId }: ContractorQuestio
                   type="text"
                   value={answers[q.id] || ''}
                   onChange={(e) => setAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
-                  placeholder={q.question_type === 'measurement' ? 'e.g., 12 ft' : 'Enter a number'}
+                  placeholder={q.question_type === 'measurement' ? 'ex.: 3,20 m' : 'Introduza um numero'}
                   className="font-body max-w-xs"
                 />
               )}
@@ -147,9 +147,11 @@ export function ContractorQuestionsForm({ projectId, userId }: ContractorQuestio
           ) : (
             <SendIcon className="w-5 h-5" />
           )}
-          {submitting ? 'Submitting...' : 'Submit & Generate Response'}
+          {submitting ? 'A submeter...' : 'Submeter e gerar resposta'}
         </Button>
       </div>
     </div>
   )
 }
+
+export const ContractorQuestionsForm = ApplicantQuestionsForm

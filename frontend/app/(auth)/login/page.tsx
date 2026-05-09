@@ -30,7 +30,7 @@ export default function LoginPage() {
       router.push('/dashboard')
       router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sign in failed')
+      setError(err instanceof Error ? err.message : 'Falha no acesso')
     } finally {
       setLoading(false)
     }
@@ -40,20 +40,17 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center p-4 bg-topo-lines">
       <Card className="relative z-10 w-full max-w-md shadow-[0_8px_32px_rgba(28,25,23,0.08)] border-border/50 animate-fade-up">
         <CardContent className="pt-10 pb-8 px-8 text-center space-y-8">
-          {/* ADU Miniature — small, accent size */}
           <div className="flex justify-center">
             <AduMiniature variant="accent" />
           </div>
 
-          {/* Branding */}
           <div className="space-y-2">
             <h1 className="heading-display text-foreground">CrossBeam</h1>
             <p className="text-muted-foreground font-body">
-              AI-Powered Permit Review for California ADUs
+              Assistente de licenciamento municipal para Viseu
             </p>
           </div>
 
-          {/* Login Form */}
           <form onSubmit={handleLogin} className="space-y-4">
             <Input
               type="email"
@@ -66,7 +63,7 @@ export default function LoginPage() {
             />
             <Input
               type="password"
-              placeholder="Password"
+              placeholder="Palavra-passe"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -76,8 +73,7 @@ export default function LoginPage() {
             <Button
               type="submit"
               disabled={loading}
-              className="w-full rounded-full px-8 py-6 text-base font-bold font-body
-                         hover:shadow-[0_0_24px_rgba(45,106,79,0.3)] hover:brightness-110"
+              className="w-full rounded-full px-8 py-6 text-base font-bold font-body hover:shadow-[0_0_24px_rgba(45,106,79,0.3)] hover:brightness-110"
               size="lg"
             >
               {loading ? (
@@ -85,11 +81,10 @@ export default function LoginPage() {
               ) : (
                 <LogInIcon className="w-4 h-4" />
               )}
-              {loading ? 'Signing in...' : 'Sign in'}
+              {loading ? 'A entrar...' : 'Entrar'}
             </Button>
           </form>
 
-          {/* Error */}
           {error && (
             <p className="text-sm text-destructive font-body">{error}</p>
           )}

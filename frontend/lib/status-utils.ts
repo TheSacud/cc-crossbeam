@@ -9,18 +9,18 @@ interface StatusConfig {
 export function getStatusConfig(status: ProjectStatus): StatusConfig {
   switch (status) {
     case 'completed':
-      return { label: 'Completed', variant: 'default' }
+      return { label: 'Concluido', variant: 'default' }
     case 'processing':
     case 'processing-phase1':
     case 'processing-phase2':
-      return { label: 'In Review', variant: 'secondary', className: 'bg-amber-100 text-amber-800 border-amber-200' }
+      return { label: 'Em analise', variant: 'secondary', className: 'bg-amber-100 text-amber-800 border-amber-200' }
     case 'awaiting-answers':
-      return { label: 'Awaiting Input', variant: 'secondary', className: 'bg-blue-100 text-blue-800 border-blue-200' }
+      return { label: 'A aguardar elementos', variant: 'secondary', className: 'bg-blue-100 text-blue-800 border-blue-200' }
     case 'ready':
     case 'uploading':
-      return { label: 'Pending', variant: 'outline' }
+      return { label: 'Pronto', variant: 'outline' }
     case 'failed':
-      return { label: 'Failed', variant: 'destructive' }
+      return { label: 'Falhou', variant: 'destructive' }
     default:
       return { label: status, variant: 'outline' }
   }
@@ -34,27 +34,18 @@ export function relativeTime(dateStr: string): string {
   const diffHr = Math.floor(diffMs / 3600000)
   const diffDays = Math.floor(diffMs / 86400000)
 
-  if (diffMin < 1) return 'just now'
-  if (diffMin < 60) return `${diffMin}m ago`
-  if (diffHr < 24) return `${diffHr}h ago`
-  if (diffDays === 1) return 'yesterday'
-  if (diffDays < 30) return `${diffDays}d ago`
+  if (diffMin < 1) return 'agora'
+  if (diffMin < 60) return `ha ${diffMin} min`
+  if (diffHr < 24) return `ha ${diffHr} h`
+  if (diffDays === 1) return 'ontem'
+  if (diffDays < 30) return `ha ${diffDays} d`
   return new Date(dateStr).toLocaleDateString()
 }
 
-const ADU_IMAGE_POOL = [
-  '/images/adu/adu-01-2story-garage-transparent.png',
-  '/images/adu/adu-02-studio-greenroof-transparent.png',
-  '/images/adu/adu-03-garage-conversion-transparent.png',
-  '/images/adu/adu-06-spanish-style-transparent.png',
-  '/images/adu/adu-07-aframe-transparent.png',
-  '/images/adu/adu-08-prefab-modular-transparent.png',
-  '/images/adu/cameron-01-longbeach-transparent.png',
-  '/images/adu/cameron-04-whittier-2story-transparent.png',
-  '/images/adu/cameron-05-lakewood-porch-transparent.png',
-  '/images/adu/cameron-06-sandimas-butterfly-transparent.png',
-  '/images/adu/cameron-09-signalhill-cottage-transparent.png',
-  '/images/adu/cameron-10-downey-lshape-transparent.png',
+const DEMO_IMAGE_POOL = [
+  '/images/viseu/review-board.svg',
+  '/images/viseu/corrections-stack.svg',
+  '/images/viseu/response-package.svg',
 ]
 
 export function getAduImage(projectId: string): string {
@@ -63,6 +54,6 @@ export function getAduImage(projectId: string): string {
     hash = ((hash << 5) - hash) + projectId.charCodeAt(i)
     hash |= 0
   }
-  const index = Math.abs(hash) % ADU_IMAGE_POOL.length
-  return ADU_IMAGE_POOL[index]
+  const index = Math.abs(hash) % DEMO_IMAGE_POOL.length
+  return DEMO_IMAGE_POOL[index]
 }

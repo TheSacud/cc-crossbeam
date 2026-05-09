@@ -1,0 +1,57 @@
+[
+  {
+    "item_id": "VC1-1",
+    "process_type": "licenciamento de obras de alteracao e ampliacao com legalizacao parcial",
+    "review_area": "instrucao-administrativa",
+    "finding_category": "SOURCE_NEEDED",
+    "source_scope": "procedure-instruction",
+    "source_reference": "RMUE art. 17 + nips-licenciamento-comunicacao-previa.md",
+    "evidence_status": "source-needed",
+    "next_action": "Identify exact Viseu NIP/checklist and request the missing administrative pieces.",
+    "needs_question": true
+  },
+  {
+    "item_id": "VC1-2",
+    "process_type": "licenciamento de obras de alteracao e ampliacao com legalizacao parcial",
+    "review_area": "acessibilidades-seguranca",
+    "finding_category": "MISSING_DRAWING_OR_ELEMENT",
+    "source_scope": "municipal-viseu",
+    "source_reference": "RMUE art. 20",
+    "evidence_status": "missing-from-submission",
+    "next_action": "Revise accessibility plan with full dimensions, slopes, and constructive detail.",
+    "needs_question": false
+  },
+  {
+    "item_id": "VC1-3",
+    "process_type": "licenciamento de obras de alteracao e ampliacao com legalizacao parcial",
+    "review_area": "arquitetura-urbanismo",
+    "finding_category": "MUNICIPAL_PROCEDURE_MISMATCH",
+    "source_scope": "municipal-viseu",
+    "source_reference": "RMUE art. 43 + pdmv-operational-baseline.md",
+    "evidence_status": "depends-on-pdmv",
+    "next_action": "Obtain the parcel PDMV framing and parking justification.",
+    "needs_question": true
+  },
+  {
+    "item_id": "VC1-4",
+    "process_type": "licenciamento de obras de alteracao e ampliacao com legalizacao parcial",
+    "review_area": "legalizacao",
+    "finding_category": "LEGALIZATION_GAP",
+    "source_scope": "municipal-viseu",
+    "source_reference": "RMUE arts. 18, 80 e 81",
+    "evidence_status": "missing-from-submission",
+    "next_action": "Frame legalization path and add survey / alteration-legalization drawings.",
+    "needs_question": true
+  },
+  {
+    "item_id": "VC1-5",
+    "process_type": "licenciamento de obras de alteracao e ampliacao com legalizacao parcial",
+    "review_area": "especialidades",
+    "finding_category": "NEEDS_SPECIALTY_INPUT",
+    "source_scope": "national",
+    "source_reference": "RJUE baseline + RMUE art. 80",
+    "evidence_status": "needs-human-validation",
+    "next_action": "Confirm whether legalization requires corrective works and which specialties must be added.",
+    "needs_question": true
+  }
+]

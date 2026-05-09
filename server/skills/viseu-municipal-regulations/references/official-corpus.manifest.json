@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "version": "2026-03-11.v1",
+  "municipality": "Viseu",
+  "skill": "viseu-municipal-regulations",
+  "generated_at": "2026-03-11",
+  "required_topics_by_flow": {
+    "city-review": [
+      "nip-packaging",
+      "pdmv-parking",
+      "pdmv-soil-class",
+      "pdmv-parameters",
+      "pdmv-constraints"
+    ],
+    "corrections-analysis": [
+      "nip-packaging",
+      "pdmv-parking",
+      "pdmv-soil-class",
+      "pdmv-parameters",
+      "pdmv-constraints"
+    ],
+    "corrections-response": []
+  },
+  "sources": [
+    {
+      "key": "viseu_nip_electronic_instruction_2024",
+      "source_url": "https://www.cm-viseu.pt/fotos/documentos_categorias_ficheiros/00_norma_inst_cmv_01_normas_de_instrucao_de_processos_em_formato_eletronico_2024_1276626320664f03350d038.pdf",
+      "source_doc": "nips-licenciamento-comunicacao-previa.md",
+      "official_doc_id": "NORMA INST_CMV_01 - Normas de Instrucao de Processos em Formato Eletronico (2024)",
+      "checked_at": "2026-03-11",
+      "article_or_section": "Condicoes de apresentacao dos elementos instrutorios, pontos 1 a 6",
+      "verification_status": "official_verified",
+      "applies_to": [
+        "licenciamento",
+        "comunicacao previa"
+      ],
+      "topics": [
+        "nip-packaging",
+        "nip-checklist"
+      ],
+      "required_for": [
+        "city-review",
+        "corrections-analysis"
+      ],
+      "file": "nips-licenciamento-comunicacao-previa.md",
+      "notes": "Official municipal electronic-submission baseline for packaging, signatures, file formats, indexing, legends, and color conventions."
+    },
+    {
+      "key": "viseu_pdmv_parking_2023",
+      "source_url": "https://files.dre.pt/2s/2023/03/055000000/0042900605.pdf",
+      "source_doc": "pdmv-estacionamento-operativo.md",
+      "official_doc_id": "Aviso n.o 5793/2023 - Republicacao do regulamento da alteracao do PDM de Viseu",
+      "checked_at": "2026-03-11",
+      "article_or_section": "Art. 68.o-G e 68.o-H",
+      "verification_status": "official_verified",
+      "applies_to": [
+        "licenciamento",
+        "comunicacao previa",
+        "legalizacao"
+      ],
+      "topics": [
+        "pdmv-parking",
+        "pdmv-parameters"
+      ],
+      "required_for": [
+        "city-review",
+        "corrections-analysis"
+      ],
+      "file": "pdmv-estacionamento-operativo.md",
+      "notes": "Official parking-quantity and parking-space framing under the republished PDMV regulation."
+    },
+    {
+      "key": "viseu_pdmv_soil_class_2023",
+      "source_url": "https://www.cm-viseu.pt/fotos/documentos_categorias_ficheiros/aviso_5793_2023_6299944176414ab2ab8cad.pdf",
+      "source_doc": "pdmv-classificacao-qualificacao-solo.md",
+      "official_doc_id": "Aviso n.o 5793/2023 - Republicacao do regulamento da alteracao do PDM de Viseu",
+      "checked_at": "2026-03-11",
+      "article_or_section": "Art. 1.o, n.os 1 a 5; Art. 68.o-A",
+      "verification_status": "official_verified",
+      "applies_to": [
+        "licenciamento",
+        "comunicacao previa",
+        "legalizacao",
+        "destaque"
+      ],
+      "topics": [
+        "pdmv-soil-class",
+        "pdmv-parameters"
+      ],
+      "required_for": [
+        "city-review",
+        "corrections-analysis"
+      ],
+      "file": "pdmv-classificacao-qualificacao-solo.md",
+      "notes": "Official PDMV basis for class/category framing and the need to ground parcel review in the applicable ordering extract."
+    },
+    {
+      "key": "viseu_pdmv_operational_parameters_2023",
+      "source_url": "https://www.cm-viseu.pt/fotos/documentos_categorias_ficheiros/aviso_5793_2023_6299944176414ab2ab8cad.pdf",
+      "source_doc": "pdmv-parametros-urbanisticos-operativos.md",
+      "official_doc_id": "Aviso n.o 5793/2023 - Republicacao do regulamento da alteracao do PDM de Viseu",
+      "checked_at": "2026-03-11",
+      "article_or_section": "Art. 1.o, n.os 1 a 5; Art. 68.o-A",
+      "verification_status": "official_verified",
+      "applies_to": [
+        "licenciamento",
+        "comunicacao previa",
+        "legalizacao"
+      ],
+      "topics": [
+        "pdmv-parameters"
+      ],
+      "required_for": [
+        "city-review",
+        "corrections-analysis"
+      ],
+      "file": "pdmv-parametros-urbanisticos-operativos.md",
+      "notes": "Operational review baseline for urbanistic parameters that depend on the applicable PDMV category extract."
+    },
+    {
+      "key": "viseu_pdmv_constraints_plans_2013_2023",
+      "source_url": "https://cm-viseu.pt/fotos/editor2/aviso_pdm.pdf",
+      "source_doc": "pdmv-condicionantes-operativas.md",
+      "official_doc_id": "Aviso n.o 12115/2013 - Revisao do Plano Diretor Municipal de Viseu",
+      "checked_at": "2026-03-11",
+      "article_or_section": "Art. 3.o; composicao da Planta de Ordenamento e Planta de Condicionantes",
+      "verification_status": "official_verified",
+      "applies_to": [
+        "licenciamento",
+        "comunicacao previa",
+        "legalizacao",
+        "destaque"
+      ],
+      "topics": [
+        "pdmv-constraints",
+        "pdmv-soil-class"
+      ],
+      "required_for": [
+        "city-review",
+        "corrections-analysis"
+      ],
+      "file": "pdmv-condicionantes-operativas.md",
+      "notes": "Official plan-sheet composition for ordering and constraints extracts, including heritage, REN, RAN, and fire-risk layers."
+    }
+  ]
+}

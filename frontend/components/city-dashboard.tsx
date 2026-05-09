@@ -51,12 +51,11 @@ export function CityDashboard() {
     return (
       <div className="flex flex-col items-center justify-center py-16 space-y-3">
         <InboxIcon className="w-10 h-10 text-muted-foreground/40" />
-        <p className="text-muted-foreground font-body">No permit reviews yet.</p>
+        <p className="text-muted-foreground font-body">Ainda não existem revisões municipais.</p>
       </div>
     )
   }
 
-  // Compute summary stats
   const completed = projects.filter(p => p.status === 'completed').length
   const inReview = projects.filter(p =>
     ['processing', 'processing-phase1', 'processing-phase2'].includes(p.status)
@@ -65,28 +64,26 @@ export function CityDashboard() {
   const failed = projects.filter(p => p.status === 'failed').length
 
   const stats = [
-    { label: 'Completed', count: completed, icon: CheckCircle2Icon, color: 'text-primary' },
-    { label: 'In Review', count: inReview, icon: ClockIcon, color: 'text-amber-600' },
-    { label: 'Pending', count: pending, icon: CircleDotIcon, color: 'text-muted-foreground' },
-    { label: 'Failed', count: failed, icon: AlertCircleIcon, color: 'text-destructive' },
+    { label: 'Concluídos', count: completed, icon: CheckCircle2Icon, color: 'text-primary' },
+    { label: 'Em análise', count: inReview, icon: ClockIcon, color: 'text-amber-600' },
+    { label: 'Prontos', count: pending, icon: CircleDotIcon, color: 'text-muted-foreground' },
+    { label: 'Falhados', count: failed, icon: AlertCircleIcon, color: 'text-destructive' },
   ].filter(s => s.count > 0)
 
   return (
     <div className="space-y-6 animate-fade-up">
-      {/* Header */}
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
           <Building2Icon className="w-5 h-5 text-primary" />
         </div>
         <div>
-          <h2 className="heading-card text-foreground">Permit Reviews</h2>
+          <h2 className="heading-card text-foreground">Pedidos municipais</h2>
           <p className="text-sm text-muted-foreground font-body">
-            {projects.length} application{projects.length !== 1 ? 's' : ''} in queue
+            {projects.length} processo{projects.length !== 1 ? 's' : ''} em carteira
           </p>
         </div>
       </div>
 
-      {/* Summary Stats */}
       <div className="flex flex-wrap gap-3">
         {stats.map(stat => (
           <div
@@ -100,7 +97,6 @@ export function CityDashboard() {
         ))}
       </div>
 
-      {/* Project Cards */}
       <div className="space-y-3">
         {projects.map(project => {
           const status = getStatusConfig(project.status)
@@ -109,7 +105,6 @@ export function CityDashboard() {
               <Card className="hover-lift shadow-[0_4px_16px_rgba(28,25,23,0.06)] border-border/50 cursor-pointer transition-all">
                 <CardContent className="p-0">
                   <div className="flex items-center gap-4 px-5 py-4">
-                    {/* ADU Thumbnail */}
                     <div className="w-16 h-16 flex-shrink-0 flex items-center justify-center">
                       <Image
                         src={getAduImage(project.id)}
@@ -121,7 +116,6 @@ export function CityDashboard() {
                       />
                     </div>
 
-                    {/* Project Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
                         <p className="text-sm font-semibold text-foreground font-body truncate">
@@ -132,11 +126,10 @@ export function CityDashboard() {
                         {project.project_address}{project.city ? `, ${project.city}` : ''}
                       </p>
                       <p className="text-xs text-muted-foreground/70 font-body mt-0.5">
-                        {project.applicant_name ? `Applicant: ${project.applicant_name}` : ''}
+                        {project.applicant_name ? `Requerente: ${project.applicant_name}` : ''}
                       </p>
                     </div>
 
-                    {/* Status + Meta */}
                     <div className="flex items-center gap-4 flex-shrink-0">
                       <Badge
                         variant={status.variant}

@@ -1,24 +1,9 @@
-import type { Metadata } from "next"
-import { Playfair_Display, Nunito } from "next/font/google"
-import "./globals.css"
-
-const playfair = Playfair_Display({
-  subsets: ["latin"],
-  variable: "--font-display",
-  weight: ["700", "900"],
-  display: "swap",
-})
-
-const nunito = Nunito({
-  subsets: ["latin"],
-  variable: "--font-body",
-  weight: ["400", "600", "700"],
-  display: "swap",
-})
+import type { Metadata } from 'next'
+import './globals.css'
 
 export const metadata: Metadata = {
-  title: "CrossBeam | AI-Powered ADU Permit Review",
-  description: "AI permit review assistant for California ADUs. Built with Claude Opus 4.6.",
+  title: 'CrossBeam | Viseu Urbanismo',
+  description: 'Assistente para revisao municipal, aperfeicoamento e resposta tecnica em fluxos urbanisticos de Viseu.',
 }
 
 export default function RootLayout({
@@ -27,7 +12,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className={`${playfair.variable} ${nunito.variable}`}>
+    <html lang="pt">
       <body className="antialiased bg-crossbeam-gradient">
         {children}
       </body>

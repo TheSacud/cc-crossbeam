@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import { generateRouter } from './routes/generate.js';
 import { extractRouter } from './routes/extract.js';

@@ -1,0 +1,19 @@
+{
+  "case_id": "viseu-correction-01",
+  "municipality": "Viseu",
+  "process_type": "licenciamento de obras de alteracao e ampliacao com legalizacao parcial",
+  "property_label": "Moradia unifamiliar anonymized",
+  "property_location": "Freguesia urbana de Viseu",
+  "notice_date": "2026-02-18",
+  "applicant_role": "requerente",
+  "design_team": [
+    "arquitetura",
+    "estabilidade",
+    "acessibilidades"
+  ],
+  "known_case_risk_flags": [
+    "legalizacao de anexo existente",
+    "estacionamento dependente de enquadramento PDMV",
+    "checklist municipal/NIP nao totalmente carregado no corpus"
+  ]
+}

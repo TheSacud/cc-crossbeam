@@ -1,0 +1,26 @@
+[
+  {
+    "sheet_id": "AC01",
+    "review_area": "acessibilidades-seguranca",
+    "actions": [
+      "Adicionar larguras, inclinacoes e detalhe construtivo do percurso acessivel",
+      "Relacionar a solucao com os acessos exteriores e entrada principal"
+    ]
+  },
+  {
+    "sheet_id": "A01",
+    "review_area": "arquitetura-urbanismo",
+    "actions": [
+      "Adicionar quadro/reserva para demonstracao de estacionamento",
+      "Referenciar enquadramento PDMV da parcela"
+    ]
+  },
+  {
+    "sheet_id": "A02",
+    "review_area": "legalizacao",
+    "actions": [
+      "Produzir versao de alteracao/legalizacao com codificacao grafica",
+      "Distinguir claramente elementos a legalizar e eventuais demolicoes/correcoes"
+    ]
+  }
+]

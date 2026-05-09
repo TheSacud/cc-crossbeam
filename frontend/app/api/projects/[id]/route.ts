@@ -49,10 +49,10 @@ export async function GET(
       .order('created_at', { ascending: false })
       .limit(1)
 
-    // Fetch contractor answers
+    // Fetch applicant answers
     const { data: answers } = await supabase
       .schema('crossbeam')
-      .from('contractor_answers')
+      .from('applicant_answers')
       .select('*')
       .eq('project_id', id)
       .order('created_at', { ascending: true })
@@ -70,7 +70,7 @@ export async function GET(
       files: files || [],
       messages: (messages || []).reverse(),
       latest_output: outputs?.[0] || null,
-      contractor_answers: answers || [],
+      applicant_answers: answers || [],
     })
   } catch (error) {
     console.error('Error fetching project:', error)

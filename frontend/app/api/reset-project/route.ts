@@ -42,10 +42,10 @@ export async function POST(request: NextRequest) {
     // NOTE: Outputs are NOT deleted on reset — they accumulate as run history.
     // Each run gets an incrementing version number for comparison.
 
-    // Clear contractor answers
+    // Clear applicant answers
     await supabase
       .schema('crossbeam')
-      .from('contractor_answers')
+      .from('applicant_answers')
       .delete()
       .eq('project_id', project_id)
 

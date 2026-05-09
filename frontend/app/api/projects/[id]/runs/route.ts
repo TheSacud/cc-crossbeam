@@ -37,7 +37,7 @@ export async function GET(
     let query = supabase
       .schema('crossbeam')
       .from('outputs')
-      .select('id, flow_phase, version, agent_cost_usd, agent_turns, agent_duration_ms, raw_artifacts, created_at')
+      .select('id, flow_phase, version, agent_cost_usd, agent_turns, agent_duration_ms, project_understanding_json, raw_artifacts, created_at')
       .eq('project_id', id)
       .order('created_at', { ascending: false })
 

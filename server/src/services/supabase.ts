@@ -65,20 +65,22 @@ export async function getProjectFiles(projectId: string) {
   return data || [];
 }
 
-export async function getContractorAnswers(projectId: string) {
+export async function getApplicantAnswers(projectId: string) {
   const { data, error } = await supabase
     .schema('crossbeam')
-    .from('contractor_answers')
+    .from('applicant_answers')
     .select('*')
     .eq('project_id', projectId)
     .order('created_at', { ascending: true });
 
   if (error) {
-    console.error('Failed to get contractor answers:', error);
+    console.error('Failed to get applicant answers:', error);
     throw error;
   }
   return data || [];
 }
+
+export const getContractorAnswers = getApplicantAnswers;
 
 export async function getPhase1Outputs(projectId: string) {
   const { data, error } = await supabase
@@ -96,6 +98,64 @@ export async function getPhase1Outputs(projectId: string) {
     throw error;
   }
   return data;
+}
+
+export async function getLatestOutputForPhase(
+  projectId: string,
+  flowPhase: 'review' | 'analysis' | 'response',
+) {
+  const { data, error } = await supabase
+    .schema('crossbeam')
+    .from('outputs')
+    .select('*')
+    .eq('project_id', projectId)
+    .eq('flow_phase', flowPhase)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error(`Failed to get latest ${flowPhase} output:`, error);
+    throw error;
+  }
+  return data;
+}
+
+export async function updateOutputRecord(
+  outputId: string,
+  patch: Record<string, unknown>,
+) {
+  const { error } = await supabase
+    .schema('crossbeam')
+    .from('outputs')
+    .update(patch)
+    .eq('id', outputId);
+
+  if (error) {
+    console.error('Failed to update output record:', error);
+    throw error;
+  }
+}
+
+export async function uploadOutputArtifact(
+  userId: string,
+  projectId: string,
+  filename: string,
+  content: Buffer,
+  contentType: string,
+) {
+  const storagePath = `${userId}/${projectId}/${filename}`;
+
+  const { error } = await supabase.storage
+    .from('crossbeam-outputs')
+    .upload(storagePath, content, { upsert: true, contentType });
+
+  if (error) {
+    console.error('Failed to upload output artifact:', error);
+    throw error;
+  }
+
+  return storagePath;
 }
 
 export async function insertMessage(

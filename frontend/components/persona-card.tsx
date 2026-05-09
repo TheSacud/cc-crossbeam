@@ -16,7 +16,7 @@ interface PersonaCardProps {
   projectCity: string
   projectId: string
   ctaText: string
-  showcaseOutputId?: string  // When set, show dual buttons (Showcase + Live)
+  showcaseOutputId?: string
 }
 
 export function PersonaCard({
@@ -46,12 +46,10 @@ export function PersonaCard({
     router.push(`/projects/${projectId}`)
   }
 
-  // Single-link mode (dev-test) vs dual-button mode (judge-demo)
   const hasDualMode = !!showcaseOutputId
 
   const cardInner = (
     <CardContent className="p-8 space-y-6">
-      {/* ADU Miniature — the hero of the card */}
       <div className="relative w-full h-40 flex items-center justify-center">
         <Image
           src={aduImage}
@@ -63,27 +61,23 @@ export function PersonaCard({
         />
       </div>
 
-      {/* Title */}
       <h2 className="heading-card text-foreground">{title}</h2>
 
-      {/* Description */}
       <p className="text-muted-foreground font-body leading-relaxed">
         {description}
       </p>
 
-      {/* Demo project info */}
       <div className="text-sm text-muted-foreground font-body border-t border-border/50 pt-4">
         <p className="font-semibold text-foreground">{projectName}</p>
         <p>{projectCity}</p>
       </div>
 
-      {/* CTAs */}
       {hasDualMode ? (
         <div className="flex gap-3">
           <Button asChild variant="outline" className="flex-1 rounded-full font-bold font-body">
             <Link href={`/projects/${projectId}?showcase=${showcaseOutputId}`}>
               <EyeIcon className="w-4 h-4 mr-2" />
-              Showcase
+              Ver exemplo
             </Link>
           </Button>
           <Button
@@ -92,7 +86,7 @@ export function PersonaCard({
             className="flex-1 rounded-full font-bold font-body hover:shadow-[0_0_24px_rgba(45,106,79,0.3)] hover:brightness-110"
           >
             {resetting ? <Loader2Icon className="w-4 h-4 mr-2 animate-spin" /> : <PlayIcon className="w-4 h-4 mr-2" />}
-            {resetting ? 'Preparing...' : 'Run Live'}
+            {resetting ? 'A preparar...' : 'Executar'}
           </Button>
         </div>
       ) : (
@@ -104,7 +98,6 @@ export function PersonaCard({
     </CardContent>
   )
 
-  // Dev-test mode: entire card is clickable. Judge mode: buttons handle navigation.
   if (hasDualMode) {
     return (
       <Card className="hover-lift shadow-[0_8px_32px_rgba(28,25,23,0.08)] border-border/50 h-full">

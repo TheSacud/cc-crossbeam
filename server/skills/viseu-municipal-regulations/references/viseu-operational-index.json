@@ -1,0 +1,126 @@
+{
+  "version": "1.0",
+  "municipality": "Viseu",
+  "corpus_manifest": "official-corpus.manifest.json",
+  "generated_from": [
+    "nips-licenciamento-comunicacao-previa.md",
+    "pdmv-estacionamento-operativo.md",
+    "pdmv-classificacao-qualificacao-solo.md",
+    "pdmv-parametros-urbanisticos-operativos.md",
+    "pdmv-condicionantes-operativas.md",
+    "rmue-instruction-documents.md",
+    "rmue-urbanization-edification.md",
+    "rmue-legalization.md"
+  ],
+  "requirements": [
+    {
+      "id": "VIS-INST-001",
+      "process_type": "licenciamento|comunicacao previa",
+      "review_area": "instrucao-administrativa",
+      "requirement_type": "municipal_packaging",
+      "document_or_rule": "Electronic submission must follow the current municipal instruction standard for signatures, PDF/A, indexed pieces, legends, and technical file packaging.",
+      "required": true,
+      "topics": [
+        "nip-packaging"
+      ],
+      "source_doc": "nips-licenciamento-comunicacao-previa.md",
+      "source_url": "https://www.cm-viseu.pt/fotos/documentos_categorias_ficheiros/00_norma_inst_cmv_01_normas_de_instrucao_de_processos_em_formato_eletronico_2024_1276626320664f03350d038.pdf",
+      "official_doc_id": "NORMA INST_CMV_01 - Normas de Instrucao de Processos em Formato Eletronico (2024)",
+      "checked_at": "2026-03-11",
+      "article_or_section": "Condicoes de apresentacao dos elementos instrutorios, pontos 1 a 6",
+      "verification_status": "official_verified",
+      "notes": "Use for current NIP-backed municipal submission packaging findings."
+    },
+    {
+      "id": "VIS-PDMV-001",
+      "process_type": "licenciamento|comunicacao previa|legalizacao",
+      "review_area": "arquitetura-urbanismo",
+      "requirement_type": "parking_count",
+      "document_or_rule": "Parking quantity for housing review in Viseu must use the official PDMV parking baseline.",
+      "required": true,
+      "topics": [
+        "pdmv-parking",
+        "pdmv-parameters"
+      ],
+      "source_doc": "pdmv-estacionamento-operativo.md",
+      "source_url": "https://files.dre.pt/2s/2023/03/055000000/0042900605.pdf",
+      "official_doc_id": "Aviso n.o 5793/2023 - Republicacao do regulamento da alteracao do PDM de Viseu",
+      "checked_at": "2026-03-11",
+      "article_or_section": "Art. 68.o-G e 68.o-H",
+      "verification_status": "official_verified",
+      "notes": "No SOURCE_NEEDED fallback allowed for parking quantity in Viseu."
+    },
+    {
+      "id": "VIS-PDMV-002",
+      "process_type": "licenciamento|comunicacao previa|legalizacao|destaque",
+      "review_area": "arquitetura-urbanismo",
+      "requirement_type": "soil_class_category",
+      "document_or_rule": "The dossier must identify the applicable PDMV class/category of soil through the official ordering extract.",
+      "required": true,
+      "topics": [
+        "pdmv-soil-class"
+      ],
+      "source_doc": "pdmv-classificacao-qualificacao-solo.md",
+      "source_url": "https://www.cm-viseu.pt/fotos/documentos_categorias_ficheiros/aviso_5793_2023_6299944176414ab2ab8cad.pdf",
+      "official_doc_id": "Aviso n.o 5793/2023 - Republicacao do regulamento da alteracao do PDM de Viseu",
+      "checked_at": "2026-03-11",
+      "article_or_section": "Art. 1.o, n.os 1 a 5; Art. 68.o-A",
+      "verification_status": "official_verified",
+      "notes": "Use when the file omits class/category framing needed for admissibility or parameter review."
+    },
+    {
+      "id": "VIS-PDMV-003",
+      "process_type": "licenciamento|comunicacao previa|legalizacao",
+      "review_area": "arquitetura-urbanismo",
+      "requirement_type": "urban_parameter_framing",
+      "document_or_rule": "Urbanistic parameter review must be grounded in the applicable PDMV category extract and not inferred from drawings alone.",
+      "required": true,
+      "topics": [
+        "pdmv-parameters"
+      ],
+      "source_doc": "pdmv-parametros-urbanisticos-operativos.md",
+      "source_url": "https://www.cm-viseu.pt/fotos/documentos_categorias_ficheiros/aviso_5793_2023_6299944176414ab2ab8cad.pdf",
+      "official_doc_id": "Aviso n.o 5793/2023 - Republicacao do regulamento da alteracao do PDM de Viseu",
+      "checked_at": "2026-03-11",
+      "article_or_section": "Art. 1.o, n.os 1 a 5; Art. 68.o-A",
+      "verification_status": "official_verified",
+      "notes": "Use for quadro sinoptico and parameter-table findings lacking category-backed framing."
+    },
+    {
+      "id": "VIS-PDMV-004",
+      "process_type": "licenciamento|comunicacao previa|legalizacao|destaque",
+      "review_area": "instrucao-administrativa",
+      "requirement_type": "constraints_extracts",
+      "document_or_rule": "Whenever the operation depends on conditioning or plan overlays, the dossier must identify the relevant official PDMV ordering/constraints extracts.",
+      "required": true,
+      "topics": [
+        "pdmv-constraints"
+      ],
+      "source_doc": "pdmv-condicionantes-operativas.md",
+      "source_url": "https://cm-viseu.pt/fotos/editor2/aviso_pdm.pdf",
+      "official_doc_id": "Aviso n.o 12115/2013 - Revisao do Plano Diretor Municipal de Viseu",
+      "checked_at": "2026-03-11",
+      "article_or_section": "Art. 3.o; composicao da Planta de Ordenamento e Planta de Condicionantes",
+      "verification_status": "official_verified",
+      "notes": "Use for missing ordering/constraints extracts and plan-dependent conditioning checks."
+    },
+    {
+      "id": "VIS-RMUE-017",
+      "process_type": "licenciamento|comunicacao previa",
+      "review_area": "instrucao-administrativa",
+      "requirement_type": "document_checklist",
+      "document_or_rule": "The submission must include the documents and projects required by RJUE, applicable regulations, and the municipal instruction rules.",
+      "required": false,
+      "topics": [
+        "nip-checklist"
+      ],
+      "source_doc": "rmue-instruction-documents.md",
+      "source_url": "https://www.cm-viseu.pt/pt/areas-de-atividade/urbanismo/regulamentos/",
+      "official_doc_id": "RMUE de Viseu",
+      "checked_at": "2026-03-11",
+      "article_or_section": "RMUE art. 17",
+      "verification_status": "paired_source_required",
+      "notes": "Use together with the official NIP extract when checking current municipal packaging/instruction details."
+    }
+  ]
+}
