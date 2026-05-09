@@ -117,10 +117,12 @@ async function processGeneration(
     // Required env vars
     const apiKey = process.env.ANTHROPIC_API_KEY;
     const supabaseUrl = process.env.SUPABASE_URL;
+    const sandboxSupabaseUrl = process.env.SUPABASE_PUBLIC_URL || supabaseUrl;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!apiKey) throw new Error('ANTHROPIC_API_KEY not configured');
     if (!supabaseUrl || !supabaseKey) throw new Error('Supabase not configured');
+    const sandboxSupabaseUrlResolved = sandboxSupabaseUrl as string;
 
     // Run the agent
     await runCrossBeamFlow({
@@ -129,7 +131,7 @@ async function processGeneration(
       city,
       address,
       apiKey,
-      supabaseUrl,
+      supabaseUrl: sandboxSupabaseUrlResolved,
       supabaseKey,
       projectId,
       userId,

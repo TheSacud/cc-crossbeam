@@ -241,10 +241,11 @@ export function normalizeProjectUnderstandingForOutput(
 
   const evidenceIds = new Set(normalizedEvidenceIndex.map((entry) => entry.id as string));
   const rawSummary = asRecord(rawRecord.project_summary);
-  const summaryText = asString(rawSummary?.summary_text);
-  if (!summaryText) {
-    return null;
-  }
+  const summaryText = asString(rawSummary?.summary_text)
+    || [asString(rawSummary?.title), asString(rawSummary?.location)]
+      .filter(Boolean)
+      .join(' — ')
+    || 'Project understanding extracted from submitted documents.';
 
   const rawDocumentProfile = asRecord(rawRecord.document_profile);
   const hasNativeText = typeof rawDocumentProfile?.has_native_text === 'boolean'

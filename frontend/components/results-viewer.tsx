@@ -26,6 +26,8 @@ interface EvidenceEntry {
   page: number | null
   desenho: number | null
   title: string
+  description: string | null
+  extracted_text: string | null
   evidence_type: string
   quote: string | null
   page_png_path: string | null
@@ -65,6 +67,16 @@ function stringArray(value: Json | null | undefined): string[] {
     : []
 }
 
+function statusLabel(value: string): string {
+  const labels: Record<string, string> = {
+    confirmed_non_compliance: 'Incumprimento confirmado',
+    document_missing_or_incomplete: 'Documento em falta/incompleto',
+    needs_official_source: 'Requer fonte oficial',
+    inconclusive: 'Inconclusivo',
+  }
+  return labels[value] || value
+}
+
 function evidenceFromRecord(value: Json): EvidenceEntry | null {
   const record = asRecord(value)
   if (!record) return null
@@ -75,7 +87,9 @@ function evidenceFromRecord(value: Json): EvidenceEntry | null {
     id,
     page,
     desenho: asNumber(record.desenho),
-    title: asString(record.title) || (page ? `Pagina ${page}` : id),
+    title: asString(record.title) || (page ? `Página ${page}` : id),
+    description: asString(record.description),
+    extracted_text: asString(record.extracted_text),
     evidence_type: asString(record.evidence_type) || 'documento',
     quote: asString(record.quote),
     page_png_path: asString(record.page_png_path),
@@ -170,7 +184,7 @@ function EvidencePanel({ output }: { output: Output }) {
   }, [evidence, output.project_id])
 
   if (evidence.length === 0 && linkedItems.length === 0) {
-    return <div className="text-sm text-muted-foreground font-body">Sem indice de evidencia estruturado neste output.</div>
+    return <div className="text-sm text-muted-foreground font-body">Sem índice de evidência estruturado neste output.</div>
   }
 
   return (
@@ -178,7 +192,7 @@ function EvidencePanel({ output }: { output: Output }) {
       <section className="space-y-3">
         <div className="flex items-center gap-2">
           <FileSearchIcon className="w-4 h-4 text-primary" />
-          <h2 className="heading-card text-foreground">Evidencias documentais</h2>
+          <h2 className="heading-card text-foreground">Evidências documentais</h2>
         </div>
         <div className="grid gap-3">
           {evidence.map((entry) => (
@@ -186,10 +200,11 @@ function EvidencePanel({ output }: { output: Output }) {
               <div className="flex flex-wrap items-center gap-2 text-sm font-body">
                 <span className="font-semibold text-foreground">{entry.id}</span>
                 <span className="text-muted-foreground">{entry.evidence_type}</span>
-                {entry.page && <span className="text-muted-foreground">Pagina {entry.page}</span>}
+                {entry.page && <span className="text-muted-foreground">Página {entry.page}</span>}
                 {entry.desenho && <span className="text-muted-foreground">Desenho {entry.desenho}</span>}
               </div>
               <div className="mt-1 font-body text-sm text-foreground">{entry.title}</div>
+              {entry.description && <p className="mt-2 text-sm text-muted-foreground font-body">{entry.description}</p>}
               {signedUrls[entry.id] && (
                 <div className="mt-3 overflow-hidden rounded-md border border-border/60 bg-muted/20">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -197,6 +212,9 @@ function EvidencePanel({ output }: { output: Output }) {
                 </div>
               )}
               {entry.quote && <p className="mt-2 text-sm text-muted-foreground font-body">{entry.quote}</p>}
+              {!entry.quote && entry.extracted_text && (
+                <p className="mt-2 text-sm text-muted-foreground font-body">{entry.extracted_text}</p>
+              )}
               <div className="mt-3 flex flex-wrap gap-2 text-xs font-mono text-muted-foreground">
                 {entry.crop_path && <span>{entry.crop_path}</span>}
                 {!entry.crop_path && entry.page_png_path && <span>{entry.page_png_path}</span>}
@@ -209,7 +227,7 @@ function EvidencePanel({ output }: { output: Output }) {
 
       {linkedItems.length > 0 && (
         <section className="space-y-3">
-          <h2 className="heading-card text-foreground">Conclusoes ligadas</h2>
+          <h2 className="heading-card text-foreground">Conclusões ligadas</h2>
           <div className="space-y-3">
             {linkedItems.map((item, index) => (
               <div key={`${item.title}-${index}`} className="rounded-md border border-border/60 bg-muted/20 p-4">
@@ -217,7 +235,7 @@ function EvidencePanel({ output }: { output: Output }) {
                   <h3 className="font-body text-sm font-semibold text-foreground">{item.title}</h3>
                   {item.determination_status && (
                     <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
-                      {item.determination_status}
+                      {statusLabel(item.determination_status)}
                     </span>
                   )}
                 </div>
@@ -289,7 +307,7 @@ export function ResultsViewer({ projectId, flowType, pinnedOutputId }: ResultsVi
   const tabs = flowType === 'city-review'
     ? [
         { key: 'corrections_letter_md', label: 'Minuta municipal' },
-        ...(hasEvidence ? [{ key: 'evidence', label: 'Evidencias' }] : []),
+        ...(hasEvidence ? [{ key: 'evidence', label: 'Evidências' }] : []),
       ]
     : [
         { key: 'response_letter_md', label: 'Resposta ao município' },
@@ -299,7 +317,7 @@ export function ResultsViewer({ projectId, flowType, pinnedOutputId }: ResultsVi
       ]
 
   if (hasEvidence && !tabs.some((tab) => tab.key === 'evidence')) {
-    tabs.push({ key: 'evidence', label: 'Evidencias' })
+    tabs.push({ key: 'evidence', label: 'Evidências' })
   }
 
   const getContent = (key: string): string | null => {

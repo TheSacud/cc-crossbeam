@@ -1,0 +1,21 @@
+[Unit]
+Description=CrossBeam Next.js frontend
+After=network-online.target crossbeam-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=da
+Group=da
+WorkingDirectory=/home/da/cc-crossbeam/frontend
+Environment=NODE_ENV=production
+Environment=PORT=3000
+EnvironmentFile=/home/da/cc-crossbeam/frontend/.env.local
+ExecStart=/usr/bin/npm run start -- -H 127.0.0.1
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

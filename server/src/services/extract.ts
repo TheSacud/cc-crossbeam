@@ -19,6 +19,14 @@ const WINDOWS_MAGICK_CANDIDATES = [
   'C:\\Program Files\\ImageMagick-7.1.2-Q16-HDRI\\magick.exe',
 ];
 
+const WINDOWS_IDENTIFY_CANDIDATES: string[] = [];
+const WINDOWS_CONVERT_CANDIDATES: string[] = [];
+
+interface ImageMagickCommands {
+  identify: string[];
+  convert: string[];
+}
+
 export interface PageTextEntry {
   page: number;
   text: string;
@@ -79,9 +87,33 @@ function requireCommand(command: string, windowsCandidates: string[] = []): stri
   return resolved;
 }
 
+function resolvePythonCommand(): string | null {
+  return resolveCommand('python3') || resolveCommand('python');
+}
+
+function resolveImageMagickCommands(): ImageMagickCommands {
+  const magickPath = resolveCommand('magick', WINDOWS_MAGICK_CANDIDATES);
+  if (magickPath) {
+    return {
+      identify: [magickPath, 'identify'],
+      convert: [magickPath],
+    };
+  }
+
+  return {
+    identify: [requireCommand('identify', WINDOWS_IDENTIFY_CANDIDATES)],
+    convert: [requireCommand('convert', WINDOWS_CONVERT_CANDIDATES)],
+  };
+}
+
 function runInlinePython(scriptPath: string, source: string, args: string[], timeout = 180_000): string {
+  const pythonPath = resolvePythonCommand();
+  if (!pythonPath) {
+    throw new Error('python3 or python is required for this extraction path but was not found in PATH');
+  }
+
   fs.writeFileSync(scriptPath, source, 'utf8');
-  return execFileSync('python', [scriptPath, ...args], {
+  return execFileSync(pythonPath, [scriptPath, ...args], {
     encoding: 'utf8',
     timeout,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -371,7 +403,7 @@ function renamePagePngs(pagesDir: string): void {
 }
 
 function cropTitleBlocksWithImageMagick(
-  magickPath: string,
+  imageMagick: ImageMagickCommands,
   pagesDir: string,
   tbDir: string,
 ): void {
@@ -379,7 +411,7 @@ function cropTitleBlocksWithImageMagick(
     const pagePath = path.join(pagesDir, pageFile);
     const num = pageFile.replace('page-', '').replace('.png', '');
     const tbPath = path.join(tbDir, `title-block-${num}.png`);
-    const dims = execFileSync(magickPath, ['identify', '-format', '%w %h', pagePath], {
+    const dims = execFileSync(imageMagick.identify[0], [...imageMagick.identify.slice(1), '-format', '%w %h', pagePath], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     }).trim();
@@ -395,8 +427,8 @@ function cropTitleBlocksWithImageMagick(
     const cropY = h - cropH;
 
     execFileSync(
-      magickPath,
-      [pagePath, '-crop', `${cropW}x${cropH}+${cropX}+${cropY}`, '+repage', tbPath],
+      imageMagick.convert[0],
+      [...imageMagick.convert.slice(1), pagePath, '-crop', `${cropW}x${cropH}+${cropX}+${cropY}`, '+repage', tbPath],
       { timeout: 30_000, stdio: 'pipe' },
     );
   }
@@ -536,14 +568,18 @@ export async function extractPdfForProject(
     const tbDir = path.join(tmpDir, 'title-blocks');
     fs.mkdirSync(tbDir);
 
-    const magickPath = requireCommand('magick', WINDOWS_MAGICK_CANDIDATES);
-    try {
-      extractTitleBlocksWithPython(pdfPath, tbDir);
-    } catch (pythonError) {
-      console.warn('Python/PyMuPDF title block extraction failed, falling back to ImageMagick cropping:', pythonError);
-      fs.rmSync(tbDir, { recursive: true, force: true });
-      fs.mkdirSync(tbDir);
-      cropTitleBlocksWithImageMagick(magickPath, pagesDir, tbDir);
+    const imageMagick = resolveImageMagickCommands();
+    if (resolvePythonCommand()) {
+      try {
+        extractTitleBlocksWithPython(pdfPath, tbDir);
+      } catch (pythonError) {
+        console.warn('Python/PyMuPDF title block extraction failed, falling back to ImageMagick cropping:', pythonError);
+        fs.rmSync(tbDir, { recursive: true, force: true });
+        fs.mkdirSync(tbDir);
+        cropTitleBlocksWithImageMagick(imageMagick, pagesDir, tbDir);
+      }
+    } else {
+      cropTitleBlocksWithImageMagick(imageMagick, pagesDir, tbDir);
     }
 
     const tbCount = fs.readdirSync(tbDir).filter(name => name.endsWith('.png')).length;

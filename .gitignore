@@ -73,3 +73,5 @@ scripts/
 *~
 .vercel
 .env*.local
+supabase/.branches/
+supabase/.temp/

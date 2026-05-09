@@ -1,0 +1,20 @@
+[Unit]
+Description=CrossBeam internal worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=da
+Group=da
+WorkingDirectory=/home/da/cc-crossbeam/server
+Environment=NODE_ENV=production
+EnvironmentFile=/home/da/cc-crossbeam/server/.env
+ExecStart=/usr/bin/npm run start
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

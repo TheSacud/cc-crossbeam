@@ -204,6 +204,15 @@ create policy "Users can CRUD own applicant answers"
 alter publication supabase_realtime add table crossbeam.projects;
 alter publication supabase_realtime add table crossbeam.messages;
 
+grant usage on schema crossbeam to anon, authenticated, service_role;
+grant select on all tables in schema crossbeam to anon;
+grant select, insert, update, delete on all tables in schema crossbeam to authenticated, service_role;
+grant usage, select on all sequences in schema crossbeam to anon, authenticated, service_role;
+
+alter default privileges in schema crossbeam grant select on tables to anon;
+alter default privileges in schema crossbeam grant select, insert, update, delete on tables to authenticated, service_role;
+alter default privileges in schema crossbeam grant usage, select on sequences to anon, authenticated, service_role;
+
 insert into storage.buckets (id, name, public)
 values
   ('crossbeam-uploads', 'crossbeam-uploads', false),

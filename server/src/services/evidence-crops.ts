@@ -8,6 +8,14 @@ const WINDOWS_MAGICK_CANDIDATES = [
   'C:\\Program Files\\ImageMagick-7.1.2-Q16-HDRI\\magick.exe',
 ];
 
+const WINDOWS_IDENTIFY_CANDIDATES: string[] = [];
+const WINDOWS_CONVERT_CANDIDATES: string[] = [];
+
+interface ImageMagickCommands {
+  identify: string[];
+  convert: string[];
+}
+
 interface CropBox {
   x: number;
   y: number;
@@ -55,6 +63,33 @@ function resolveCommand(command: string, windowsCandidates: string[] = []): stri
   }
 }
 
+function requireCommand(command: string, windowsCandidates: string[] = []): string {
+  const resolved = resolveCommand(command, windowsCandidates);
+  if (!resolved) {
+    throw new Error(`${command} is required for evidence crop generation but was not found in PATH`);
+  }
+  return resolved;
+}
+
+function resolveImageMagickCommands(): ImageMagickCommands | null {
+  const magickPath = resolveCommand('magick', WINDOWS_MAGICK_CANDIDATES);
+  if (magickPath) {
+    return {
+      identify: [magickPath, 'identify'],
+      convert: [magickPath],
+    };
+  }
+
+  const identifyPath = resolveCommand('identify', WINDOWS_IDENTIFY_CANDIDATES);
+  const convertPath = resolveCommand('convert', WINDOWS_CONVERT_CANDIDATES);
+  if (!identifyPath || !convertPath) return null;
+
+  return {
+    identify: [requireCommand('identify', WINDOWS_IDENTIFY_CANDIDATES)],
+    convert: [requireCommand('convert', WINDOWS_CONVERT_CANDIDATES)],
+  };
+}
+
 function storageParts(storagePath: string): { bucket: string; path: string } {
   if (storagePath.startsWith('crossbeam-demo-assets/')) {
     return { bucket: 'crossbeam-demo-assets', path: storagePath.replace('crossbeam-demo-assets/', '') };
@@ -94,8 +129,8 @@ function parseCropBox(entry: Record<string, unknown>): CropBox | null {
   return null;
 }
 
-function imageSize(magickPath: string, imagePath: string): { width: number; height: number } {
-  const dims = execFileSync(magickPath, ['identify', '-format', '%w %h', imagePath], {
+function imageSize(imageMagick: ImageMagickCommands, imagePath: string): { width: number; height: number } {
+  const dims = execFileSync(imageMagick.identify[0], [...imageMagick.identify.slice(1), '-format', '%w %h', imagePath], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim();
@@ -161,8 +196,8 @@ export async function attachEvidenceCropsForProject(
   const entriesNeedingCrops = evidenceIndex.filter((entry) => parseCropBox(entry));
   if (entriesNeedingCrops.length === 0) return rawArtifacts;
 
-  const magickPath = resolveCommand('magick', WINDOWS_MAGICK_CANDIDATES);
-  if (!magickPath) {
+  const imageMagick = resolveImageMagickCommands();
+  if (!imageMagick) {
     console.warn('ImageMagick not found; skipping evidence crop generation');
     return rawArtifacts;
   }
@@ -187,12 +222,12 @@ export async function attachEvidenceCropsForProject(
       const pagePath = path.join(pagesDir, `page-${String(page).padStart(2, '0')}.png`);
       if (!fs.existsSync(pagePath)) continue;
 
-      const crop = pixelCrop(cropBox, imageSize(magickPath, pagePath));
+      const crop = pixelCrop(cropBox, imageSize(imageMagick, pagePath));
       const cropFileName = `${safeId(id)}.png`;
       const cropLocalPath = path.join(tmpDir, cropFileName);
       execFileSync(
-        magickPath,
-        [pagePath, '-crop', `${crop.width}x${crop.height}+${crop.x}+${crop.y}`, '+repage', cropLocalPath],
+        imageMagick.convert[0],
+        [...imageMagick.convert.slice(1), pagePath, '-crop', `${crop.width}x${crop.height}+${crop.x}+${crop.y}`, '+repage', cropLocalPath],
         { stdio: 'pipe', timeout: 30_000 },
       );
 

@@ -25,7 +25,7 @@ enabled = true
 [studio]
 enabled = true
 port = 54323
-api_url = "http://127.0.0.1"
+api_url = "https://viseu-crossbeam.duckdns.org"
 
 [inbucket]
 enabled = true
@@ -39,8 +39,8 @@ file_size_limit = "100MiB"
 
 [auth]
 enabled = true
-site_url = "http://localhost:3000"
-additional_redirect_urls = ["http://localhost:3000", "http://127.0.0.1:3000"]
+site_url = "https://viseu-crossbeam.duckdns.org"
+additional_redirect_urls = ["https://viseu-crossbeam.duckdns.org", "http://localhost:3000", "http://127.0.0.1:3000"]
 jwt_expiry = 3600
 enable_signup = true
 

@@ -25,7 +25,8 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 
 // Start server
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
-  console.log(`CrossBeam server listening on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/health`);
+const HOST = process.env.HOST || '0.0.0.0';
+app.listen(Number(PORT), HOST, () => {
+  console.log(`CrossBeam server listening on ${HOST}:${PORT}`);
+  console.log(`Health check: http://${HOST}:${PORT}/health`);
 });

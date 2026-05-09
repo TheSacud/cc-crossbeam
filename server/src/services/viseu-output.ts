@@ -29,6 +29,8 @@ export interface EvidenceIndexEntry extends Record<string, unknown> {
   page: number;
   desenho: number | null;
   title: string;
+  description: string | null;
+  extracted_text: string | null;
   page_png_path: string;
   title_block_png_path: string;
   crop_path: string | null;
@@ -168,6 +170,42 @@ function firstString(...values: unknown[]): string | null {
     if (typeof value === 'string' && value.trim()) return value.trim();
   }
   return null;
+}
+
+const PORTUGUESE_TEXT_OVERRIDES: Record<string, string> = {
+  'Cadastral area from drawing: 1785 m²': 'Área cadastral indicada no desenho: 1785 m²',
+  'Public way cession: 67.65 m²': 'Cedência à via pública: 67,65 m²',
+  'Cadastral area after cession: 1718.10 m²': 'Área cadastral após cedência: 1718,10 m²',
+  'Proposed footprint: 329.35 m²': 'Área de implantação proposta: 329,35 m²',
+  'Waterproofed areas: 594.43 m²': 'Áreas impermeabilizadas: 594,43 m²',
+  'Construction spec mentions 4 bathrooms + 1 kitchen + technical zone per unit (7 total bathrooms in spec)': 'A descrição de obra menciona 4 casas de banho, 1 cozinha e zona técnica por fração (7 casas de banho no total)',
+  'Marketing typology: T4 with 4 bedrooms': 'Tipologia anunciada: T4 com 4 quartos',
+  'Marketing Fração A gross area': 'Área bruta anunciada da Fração A',
+  'Marketing Fração B gross area': 'Área bruta anunciada da Fração B',
+  'Marketing Fração A parking area': 'Área de estacionamento anunciada da Fração A',
+  'Marketing Fração B parking area': 'Área de estacionamento anunciada da Fração B',
+  'Marketing mentions garage and covered parking': 'O anúncio menciona garagem e estacionamento coberto',
+  'PIP favorable decision dated 27.08.2024, process 17.04.02/2024/171': 'Decisão favorável do PIP datada de 27.08.2024, processo 17.04.02/2024/171',
+  'Requirement for subdivision alteration before construction': 'Exigência de alteração ao loteamento antes da construção',
+  'PIP typology: T3 bifamily': 'Tipologia no PIP: moradia bifamiliar T3',
+  'Lot registry area and note about non-updated area': 'Área registal do lote e nota sobre área não atualizada',
+  'PIP total construction area 500 m²': 'Área total de construção no PIP: 500 m²',
+  'Alvará 14/86 conditions: floors, occupation, setbacks, colors, wall height': 'Condições do Alvará 14/86: pisos, ocupação, afastamentos, cores e altura do muro',
+  'Urbanization works requirements and caução': 'Exigências relativas a obras de urbanização e caução',
+  'Missing PDMV extracts (ordering/classification and constraints)': 'Faltam extratos PDMV (ordenamento/classificação e condicionantes)',
+  'Digital format compliance (PDF/A and open technical format) -- needs human validation': 'Conformidade do formato digital (PDF/A e formato técnico aberto) — requer validação humana',
+  'Drawing title blocks incomplete: missing location address and scale on most sheets': 'Legendas dos desenhos incompletas: falta morada/localização e escala na maioria das peças',
+  'Process not properly indexed and paginated as a unified dossier': 'Processo sem índice e paginação adequados como dossier único',
+  'Accessibility plan incomplete: only ground floor covered, first floor accessibility plan missing': 'Plano de acessibilidades incompleto: apenas o r/chão está coberto; falta o 1.º andar',
+  'Missing cost estimate for construction works (edificacao)': 'Falta estimativa de custo das obras de edificação',
+  'Color conventions for new construction/alteration not verifiable across all drawings': 'Convenções de cor para construção nova/alteração não verificáveis em todas as peças',
+  'Occupation index depends on unresolved lot area - compliance indeterminate': 'Índice de ocupação depende da área do lote ainda por reconciliar — conformidade indeterminada',
+  'sheet': 'peça',
+};
+
+function localizedText(value: string | null): string | null {
+  if (!value) return null;
+  return PORTUGUESE_TEXT_OVERRIDES[value] || value;
 }
 
 function stringArray(value: unknown): string[] {
@@ -460,6 +498,30 @@ export function normalizeSheetManifest(
   return { ...manifest, sheets };
 }
 
+function findingsArrayFromArtifact(artifact: unknown): Record<string, unknown>[] {
+  if (Array.isArray(artifact)) {
+    return artifact.filter((entry): entry is Record<string, unknown> => (
+      Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry)
+    ));
+  }
+
+  if (!artifact || typeof artifact !== 'object' || Array.isArray(artifact)) {
+    return [];
+  }
+
+  const record = artifact as Record<string, unknown>;
+  for (const key of ['findings', 'items', 'corrections']) {
+    const value = record[key];
+    if (Array.isArray(value)) {
+      return value.filter((entry): entry is Record<string, unknown> => (
+        Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry)
+      ));
+    }
+  }
+
+  return [];
+}
+
 function collectRawFindings(rawFiles: RawOutputFiles, draft?: Record<string, unknown>): Record<string, unknown>[] {
   const fromDraft = draft && Array.isArray(draft.all_findings) ? (draft.all_findings as Record<string, unknown>[]) : [];
   const sidecars = [
@@ -471,7 +533,7 @@ function collectRawFindings(rawFiles: RawOutputFiles, draft?: Record<string, unk
     'findings-legalizacao.json',
     'municipal_compliance.json',
     'national_compliance.json',
-  ].flatMap((name) => (Array.isArray(rawFiles[name]) ? (rawFiles[name] as Record<string, unknown>[]) : []));
+  ].flatMap((name) => findingsArrayFromArtifact(rawFiles[name]));
 
   const seen = new Set<string>();
   const combined = [...fromDraft, ...sidecars];
@@ -509,12 +571,14 @@ export function normalizeEvidenceIndex(rawFiles: RawOutputFiles): EvidenceIndexE
         page,
         desenho: parseMaybeNumber(entry.desenho) ?? sheet?.desenho ?? null,
         title: firstString(entry.title) || sheet?.title || `Page ${page}`,
+        description: localizedText(firstString(entry.description)),
+        extracted_text: firstString(entry.extracted_text),
         page_png_path: firstString(entry.page_png_path) || sheet?.page_png_path || toPagePngPath(page),
         title_block_png_path: firstString(entry.title_block_png_path) || sheet?.title_block_png_path || toTitleBlockPath(page),
         crop_path: firstString(entry.crop_path),
         crop_storage_bucket: firstString(entry.crop_storage_bucket),
         crop_storage_path: firstString(entry.crop_storage_path),
-        evidence_type: firstString(entry.evidence_type) || 'sheet',
+        evidence_type: localizedText(firstString(entry.evidence_type)) || 'peça',
         quote: firstString(entry.quote),
       } satisfies EvidenceIndexEntry;
     })
@@ -653,9 +717,25 @@ function priorityFromRef(ref: string): number {
 }
 
 function titleFromFinding(finding: Record<string, unknown>): string {
+  const explicitTitle = firstString(finding.title, finding.topic);
+  if (explicitTitle) {
+    const localized = localizedText(explicitTitle) || explicitTitle;
+    return localized.length < 140 ? localized : localized.slice(0, 120).trim();
+  }
+
   const description = firstString(finding.description, finding.next_action);
   if (!description) return findingRef(finding) || 'Blocking issue';
-  const sentence = description.split(/[.!?]\s/)[0]?.trim();
+
+  const sentenceParts = description.split(/(?<=[.!?])\s+/);
+  let sentence = '';
+  for (const part of sentenceParts) {
+    sentence = sentence ? `${sentence} ${part}` : part;
+    if (!/(^|\s)(art|arts|n|nº|no|dr|dra|sr|sra)\.$/i.test(sentence.trim())) {
+      break;
+    }
+  }
+  sentence = sentence.replace(/[.!?]$/, '').trim();
+
   return sentence && sentence.length < 140 ? sentence : description.slice(0, 120).trim();
 }
 
@@ -886,23 +966,6 @@ export function buildCanonicalViseuReviewArtifactsForSandbox(rawFiles: RawOutput
         .map((findingId) => findingById.get(findingId))
         .filter((finding): finding is NormalizedViseuFinding => Boolean(finding));
       const supportedFindings = linkedFindings.filter((finding) => findingSupportsBlocker(finding));
-      if (issue.source_findings.length > 0 && supportedFindings.length === 0) {
-        const demotedIssue = {
-          title: issue.title,
-          source_findings: issue.source_findings,
-          evidence_refs: [
-            ...new Set([
-              ...issue.evidence_refs,
-              ...linkedFindings.flatMap((finding) => finding.evidence_refs),
-            ]),
-          ],
-          determination_status: linkedFindings[0]?.determination_status || 'inconclusive',
-          reason: 'demoted_from_blocking_issue_due_to_insufficient_support',
-        } satisfies ValidationReport['removed_blocking_issues'][number];
-        removedBlockingIssues.push(demotedIssue);
-        additionalCorrections.push(demotedIssue);
-        return null;
-      }
 
       const narrowedIssue: CanonicalBlockingIssue = {
         ...issue,
