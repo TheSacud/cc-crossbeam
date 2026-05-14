@@ -42,6 +42,7 @@ interface FileToDownload {
   bucket: string;
   storagePath: string;
   targetFilename: string;
+  required: boolean;
 }
 
 interface RunFlowOptions {
@@ -114,7 +115,12 @@ export function normalizeProjectUnderstandingForOutput(
   }
 
   function asNumber(value: unknown): number | null {
-    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Number(value.trim().replace(',', '.'));
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
   }
 
   function asBooleanOrNull(value: unknown): boolean | null {
@@ -210,11 +216,17 @@ export function normalizeProjectUnderstandingForOutput(
   const rawRecord = raw as Record<string, unknown>;
   const pagePath = (page: number) => `pages-png/page-${String(page).padStart(2, '0')}.png`;
   const titleBlockPath = (page: number) => `title-blocks/title-block-${String(page).padStart(2, '0')}.png`;
+  const inferPageFromPath = (value: string | null): number | null => {
+    const match = value?.match(/(?:page|title-block)-0?(\d{1,3})\.(?:png|jpg|jpeg)$/i);
+    return match ? asNumber(match[1]) : null;
+  };
 
   const evidenceIndex = (Array.isArray(rawRecord.evidence_index) ? rawRecord.evidence_index : [])
     .map((entry, index) => {
       const item = asRecord(entry);
-      const page = asNumber(item?.page);
+      const page = asNumber(item?.page ?? item?.source_sheet ?? item?.sheet ?? item?.page_number)
+        ?? inferPageFromPath(asString(item?.page_png_path))
+        ?? inferPageFromPath(asString(item?.title_block_png_path));
       if (page == null) {
         return null;
       }
@@ -230,7 +242,7 @@ export function normalizeProjectUnderstandingForOutput(
         crop_storage_bucket: asString(item?.crop_storage_bucket),
         crop_storage_path: asString(item?.crop_storage_path),
         evidence_type: asString(item?.evidence_type) || 'sheet',
-        quote: asString(item?.quote),
+        quote: asString(item?.quote ?? item?.description),
       };
     });
   const normalizedEvidenceIndex = evidenceIndex.filter(Boolean) as Array<Record<string, unknown>>;
@@ -242,6 +254,7 @@ export function normalizeProjectUnderstandingForOutput(
   const evidenceIds = new Set(normalizedEvidenceIndex.map((entry) => entry.id as string));
   const rawSummary = asRecord(rawRecord.project_summary);
   const summaryText = asString(rawSummary?.summary_text)
+    || asString(rawSummary?.description)
     || [asString(rawSummary?.title), asString(rawSummary?.location)]
       .filter(Boolean)
       .join(' — ')
@@ -661,18 +674,71 @@ function inferBlockingIssueSheetRefs(allFiles: Record<string, unknown>): void {
 
 // --- Sandbox Lifecycle ---
 
+function getSandboxCredentials() {
+  const teamId = process.env.VERCEL_TEAM_ID;
+  const projectId = process.env.VERCEL_PROJECT_ID;
+  const token = process.env.VERCEL_TOKEN;
+
+  if (!teamId || !projectId || !token) {
+    throw new Error('Vercel Sandbox credentials are not configured');
+  }
+
+  return { teamId, projectId, token };
+}
+
+interface SandboxRuntimeState {
+  status: string;
+  stoppedAt?: number;
+  duration?: number;
+  timeout?: number;
+}
+
+async function getFreshSandboxState(sandboxId: string): Promise<SandboxRuntimeState> {
+  const freshSandbox = await Sandbox.get({
+    sandboxId,
+    ...getSandboxCredentials(),
+  });
+  const metadata = (freshSandbox as unknown as { sandbox?: Partial<SandboxRuntimeState> }).sandbox || {};
+  return {
+    status: freshSandbox.status,
+    stoppedAt: metadata.stoppedAt,
+    duration: metadata.duration,
+    timeout: metadata.timeout,
+  };
+}
+
+function formatSandboxRuntimeState(state: SandboxRuntimeState): string {
+  const parts = [`status: ${state.status}`];
+  if (state.stoppedAt) parts.push(`stoppedAt: ${new Date(state.stoppedAt).toISOString()}`);
+  if (state.duration) parts.push(`durationMs: ${state.duration}`);
+  if (state.timeout) parts.push(`timeoutMs: ${state.timeout}`);
+  return parts.join(', ');
+}
+
+function describeSandboxWaitError(err: unknown): string {
+  const error = err as {
+    message?: string;
+    response?: { status?: number };
+    json?: { error?: { code?: string; message?: string } };
+    text?: string;
+  };
+  const parts = [error.message || String(err)];
+  if (error.response?.status) parts.push(`status=${error.response.status}`);
+  if (error.json?.error?.code) parts.push(`code=${error.json.error.code}`);
+  if (error.json?.error?.message) parts.push(`apiMessage=${error.json.error.message}`);
+  return parts.join(' ');
+}
+
 async function createSandbox(): Promise<Sandbox> {
   console.log(`Creating Vercel Sandbox (timeout: ${CONFIG.SANDBOX_TIMEOUT}ms, vcpus: ${CONFIG.SANDBOX_VCPUS})...`);
   const sandbox = await Sandbox.create({
-    teamId: process.env.VERCEL_TEAM_ID!,
-    projectId: process.env.VERCEL_PROJECT_ID!,
-    token: process.env.VERCEL_TOKEN!,
+    ...getSandboxCredentials(),
     resources: { vcpus: CONFIG.SANDBOX_VCPUS },
     timeout: CONFIG.SANDBOX_TIMEOUT,
     runtime: CONFIG.RUNTIME,
   });
   console.log(`Sandbox created: ${sandbox.sandboxId}, timeout: ${sandbox.timeout}ms`);
-  // Extend timeout to ensure we have the full 30 minutes
+  // Extend timeout when Vercel creates a shorter sandbox than requested.
   if (sandbox.timeout < CONFIG.SANDBOX_TIMEOUT) {
     console.log(`Extending sandbox timeout from ${sandbox.timeout}ms to ${CONFIG.SANDBOX_TIMEOUT}ms`);
     await sandbox.extendTimeout(CONFIG.SANDBOX_TIMEOUT - sandbox.timeout);
@@ -732,6 +798,7 @@ function buildDownloadManifest(files: ProjectFile[]): FileToDownload[] {
       bucket,
       storagePath,
       targetFilename: f.filename,
+      required: true,
     };
   });
 }
@@ -746,19 +813,59 @@ async function downloadFilesInSandbox(
   console.log(`Setting up download of ${filesToDownload.length} files...`);
 
   const downloadScript = `
-import { createClient } from '@supabase/supabase-js';
 import fs from 'fs';
 import path from 'path';
 
-const supabase = createClient('${supabaseUrl}', '${supabaseKey}');
+const supabaseUrl = ${JSON.stringify(supabaseUrl.replace(/\/+$/, ''))};
+const supabaseKey = ${JSON.stringify(supabaseKey)};
 const files = ${JSON.stringify(filesToDownload)};
 const basePath = '${SANDBOX_FILES_PATH}';
+
+function encodeStoragePath(storagePath) {
+  return storagePath.split('/').map(encodeURIComponent).join('/');
+}
+
+async function downloadStorageObject(file) {
+  const url = supabaseUrl + '/storage/v1/object/' + encodeURIComponent(file.bucket) + '/' + encodeStoragePath(file.storagePath);
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(url, {
+        headers: {
+          apikey: supabaseKey,
+          authorization: 'Bearer ' + supabaseKey,
+        },
+      });
+
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new Error('HTTP ' + res.status + ' ' + res.statusText + (body ? ': ' + body.slice(0, 300) : ''));
+      }
+
+      return Buffer.from(await res.arrayBuffer());
+    } catch (err) {
+      lastError = err;
+      console.error(
+        'Download attempt ' + attempt + '/3 failed for ' + file.targetFilename
+        + ' from ' + file.bucket + '/' + file.storagePath + ': '
+        + (err?.message || String(err))
+      );
+      if (attempt < 3) {
+        await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+      }
+    }
+  }
+
+  throw lastError || new Error('download failed');
+}
 
 async function downloadFiles() {
   console.log('Starting download of ' + files.length + ' files from Supabase...');
 
   let downloaded = 0;
   let failed = 0;
+  const failures = [];
 
   for (const file of files) {
     const targetPath = path.join(basePath, file.targetFilename);
@@ -769,29 +876,29 @@ async function downloadFiles() {
     }
 
     try {
-      const { data, error } = await supabase.storage
-        .from(file.bucket)
-        .download(file.storagePath);
-
-      if (error) {
-        console.error('Error downloading ' + file.targetFilename + ':', error.message);
-        failed++;
-        continue;
-      }
-
-      const buffer = Buffer.from(await data.arrayBuffer());
+      const buffer = await downloadStorageObject(file);
       fs.writeFileSync(targetPath, buffer);
       downloaded++;
-      console.log('Downloaded: ' + file.targetFilename + ' from ' + file.bucket);
+      console.log('Downloaded: ' + file.targetFilename + ' from ' + file.bucket + ' (' + buffer.length + ' bytes)');
     } catch (err) {
       console.error('Failed to download ' + file.targetFilename + ':', err.message);
       failed++;
+      failures.push({
+        filename: file.targetFilename,
+        bucket: file.bucket,
+        storagePath: file.storagePath,
+        required: file.required !== false,
+        error: err?.message || String(err),
+      });
     }
   }
 
   console.log('Download complete: ' + downloaded + ' succeeded, ' + failed + ' failed');
+  if (failures.length > 0) {
+    console.error('Download failures: ' + JSON.stringify(failures, null, 2));
+  }
 
-  if (failed > 0 && downloaded === 0) {
+  if (failures.some(file => file.required !== false)) {
     process.exit(1);
   }
 }
@@ -811,10 +918,14 @@ downloadFiles();
 
   const stdout = await result.stdout();
   console.log(stdout.toString());
+  const stderr = await result.stderr();
+  const stderrText = stderr.toString();
+  if (stderrText.trim()) {
+    console.warn(stderrText);
+  }
 
   if (result.exitCode !== 0) {
-    const stderr = await result.stderr();
-    throw new Error(`Failed to download files: ${stderr.toString()}`);
+    throw new Error(`Failed to download files: ${stderrText}`);
   }
 
   console.log('Files downloaded successfully in sandbox');
@@ -878,6 +989,41 @@ async function preloadDeterministicArtifacts(
     return false;
   }
 
+  const qualityResult = await sandbox.runCommand({
+    cmd: 'node',
+    args: [
+      '-e',
+      `
+const fs = require('fs');
+const manifest = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+const sheets = Array.isArray(manifest.sheets) ? manifest.sheets : [];
+const count = sheets.length || 1;
+const confirmed = sheets.filter(s => s && s.title_confirmed === true).length;
+const numbered = sheets.filter(s => s && s.desenho != null).length;
+const scaled = sheets.filter(s => s && s.scale).length;
+const lowConfidence = sheets.filter(s => s && s.extraction_confidence === 'low').length;
+const score = Math.max(confirmed / count, numbered / count, scaled / count);
+const usable = sheets.length > 0 && (score >= 0.6 || lowConfidence / count <= 0.25);
+console.log(JSON.stringify({ usable, sheets: sheets.length, confirmed, numbered, scaled, lowConfidence, score }));
+process.exit(usable ? 0 : 2);
+`,
+      manifestPath,
+    ],
+  });
+
+  const qualityStdout = (await qualityResult.stdout()).toString().trim();
+  if (qualityResult.exitCode !== 0) {
+    console.log(`Preliminary sheet manifest is low confidence; agent will rebuild it: ${qualityStdout}`);
+    if (projectId) {
+      insertMessage(
+        projectId,
+        'system',
+        `[SANDBOX 5.5/7] Preliminary sheet manifest left as input hint; quality check failed (${qualityStdout || 'no details'})`,
+      ).catch(() => {});
+    }
+    return false;
+  }
+
   await sandbox.runCommand({ cmd: 'mkdir', args: ['-p', SANDBOX_OUTPUT_PATH] });
   const copyResult = await sandbox.runCommand({
     cmd: 'cp',
@@ -890,7 +1036,7 @@ async function preloadDeterministicArtifacts(
   }
 
   if (projectId) {
-    insertMessage(projectId, 'system', '[SANDBOX 5.5/7] Preliminary sheet manifest pre-loaded').catch(() => {});
+    insertMessage(projectId, 'system', `[SANDBOX 5.5/7] Sheet manifest pre-loaded after quality check (${qualityStdout})`).catch(() => {});
   }
   return true;
 }
@@ -1293,11 +1439,6 @@ async function runAgent() {
       agent_duration_ms: Date.now() - startTime,
     };
 
-    if (normalized) {
-      outputData.project_understanding_json = normalized;
-      outputData.raw_artifacts['project_understanding.json'] = normalized;
-    }
-
     if (flowPhase === 'review') {
       Object.assign(outputData, buildReviewPhaseOutputData(allFiles));
       if (fs.existsSync(path.join(OUTPUT_PATH, 'corrections_letter.pdf'))) {
@@ -1312,6 +1453,11 @@ async function runAgent() {
         const pdfContent = fs.readFileSync(path.join(OUTPUT_PATH, 'response_letter.pdf'));
         outputData.response_letter_pdf_path = await uploadFile('response_letter.pdf', pdfContent);
       }
+    }
+
+    if (normalized) {
+      outputData.project_understanding_json = normalized;
+      outputData.raw_artifacts['project_understanding.json'] = normalized;
     }
 
     // Create output record
@@ -1394,9 +1540,11 @@ runAgent();
   });
   console.log(`Agent command started: ${cmd.cmdId}`);
 
-  // Resilient wait loop — detached commands survive connection drops
+  // Resilient wait loop — detached commands survive connection drops.
+  // cmd.wait() normally blocks until completion; retries cover transient API failures.
+  const WAIT_RETRY_MS = 30000;
   let attempts = 0;
-  const MAX_WAIT_ATTEMPTS = 120; // 120 * 30s = 60 min max
+  const MAX_WAIT_ATTEMPTS = Math.ceil(CONFIG.SANDBOX_TIMEOUT / WAIT_RETRY_MS) + 2;
   while (true) {
     try {
       console.log(`Waiting for agent completion (attempt ${attempts + 1})...`);
@@ -1405,28 +1553,32 @@ runAgent();
       return { exitCode: finished.exitCode };
     } catch (err: unknown) {
       attempts++;
-      const errMsg = err instanceof Error ? err.message : String(err);
+      const errMsg = describeSandboxWaitError(err);
       console.log(`Wait attempt ${attempts} failed: ${errMsg}`);
 
       if (attempts >= MAX_WAIT_ATTEMPTS) {
         throw new Error(`Agent wait failed after ${attempts} attempts: ${errMsg}`);
       }
 
-      // Check if sandbox is still alive before retrying
+      // Refresh from Vercel; sandbox.status on the original object is cached.
       try {
-        const sandboxStatus = sandbox.status;
-        console.log(`Sandbox status: ${sandboxStatus}`);
-        if (sandboxStatus !== 'running') {
-          throw new Error(`Sandbox is no longer running (status: ${sandboxStatus})`);
+        const sandboxState = await getFreshSandboxState(sandbox.sandboxId);
+        console.log(`Sandbox status: ${formatSandboxRuntimeState(sandboxState)}`);
+        if (sandboxState.status !== 'running') {
+          throw new Error(
+            `Sandbox stopped before agent completed (${formatSandboxRuntimeState(sandboxState)}). Last wait error: ${errMsg}`,
+          );
         }
       } catch (statusErr: unknown) {
         const statusMsg = statusErr instanceof Error ? statusErr.message : String(statusErr);
+        if (statusMsg.startsWith('Sandbox stopped before agent completed')) {
+          throw statusErr;
+        }
         console.log(`Could not check sandbox status: ${statusMsg}`);
       }
 
-      // Wait before retrying
       console.log('Retrying wait in 30 seconds...');
-      await new Promise(resolve => setTimeout(resolve, 30000));
+      await new Promise(resolve => setTimeout(resolve, WAIT_RETRY_MS));
     }
   }
 }

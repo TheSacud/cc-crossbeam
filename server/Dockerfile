@@ -18,7 +18,7 @@ FROM node:22-slim AS runtime
 WORKDIR /app
 
 RUN apt-get update -qq && \
-    apt-get install -y -qq --no-install-recommends poppler-utils imagemagick && \
+    apt-get install -y -qq --no-install-recommends poppler-utils imagemagick tesseract-ocr tesseract-ocr-por && \
     rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./

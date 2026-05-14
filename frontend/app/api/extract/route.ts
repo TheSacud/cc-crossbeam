@@ -38,12 +38,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Server not configured' }, { status: 500 })
     }
 
+    const workerToken = process.env.CROSSBEAM_WORKER_TOKEN
+    if (!workerToken) {
+      return NextResponse.json({ error: 'Server not configured' }, { status: 500 })
+    }
+
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 30000)
 
     const response = await fetch(`${cloudRunUrl}/extract`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${workerToken}`,
+      },
       body: JSON.stringify({ project_id }),
       signal: controller.signal,
     })

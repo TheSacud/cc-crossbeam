@@ -121,6 +121,27 @@ export async function getLatestOutputForPhase(
   return data;
 }
 
+export async function getRecentOutputsForPhase(
+  projectId: string,
+  flowPhase: 'review' | 'analysis' | 'response',
+  limit = 10,
+) {
+  const { data, error } = await supabase
+    .schema('crossbeam')
+    .from('outputs')
+    .select('*')
+    .eq('project_id', projectId)
+    .eq('flow_phase', flowPhase)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error(`Failed to get recent ${flowPhase} outputs:`, error);
+    throw error;
+  }
+  return data || [];
+}
+
 export async function updateOutputRecord(
   outputId: string,
   patch: Record<string, unknown>,

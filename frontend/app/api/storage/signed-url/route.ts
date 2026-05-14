@@ -2,6 +2,23 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { authenticateRequest, getSupabaseForAuth } from '@/lib/api-auth'
 
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
+
+function normalizeStoragePath(bucket: string, path: string): string[] {
+  const cleanPath = path.replace(/^\/+/, '')
+  const withoutBucket = cleanPath.startsWith(`${bucket}/`)
+    ? cleanPath.slice(bucket.length + 1)
+    : cleanPath
+  return [withoutBucket, `${bucket}/${withoutBucket}`]
+}
+
+function jsonIncludesStoragePath(value: JsonValue | undefined, allowed: Set<string>): boolean {
+  if (typeof value === 'string') return allowed.has(value)
+  if (!value || typeof value !== 'object') return false
+  if (Array.isArray(value)) return value.some((entry) => jsonIncludesStoragePath(entry, allowed))
+  return Object.values(value).some((entry) => jsonIncludesStoragePath(entry, allowed))
+}
+
 export async function POST(request: NextRequest) {
   try {
     const auth = await authenticateRequest(request)
@@ -32,6 +49,49 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
 
+    const allowedPaths = new Set(normalizeStoragePath(bucket, path))
+
+    const { data: files, error: filesError } = await supabase
+      .schema('crossbeam')
+      .from('files')
+      .select('storage_path')
+      .eq('project_id', project_id)
+
+    if (filesError) {
+      return NextResponse.json({ error: 'Could not verify file access' }, { status: 500 })
+    }
+
+    const fileAllowed = (files || []).some((file) => allowedPaths.has(file.storage_path))
+
+    const { data: outputs, error: outputsError } = await supabase
+      .schema('crossbeam')
+      .from('outputs')
+      .select('corrections_letter_pdf_path, response_letter_pdf_path, review_checklist_json, corrections_analysis_json, applicant_questions_json, project_understanding_json, raw_artifacts')
+      .eq('project_id', project_id)
+
+    if (outputsError) {
+      return NextResponse.json({ error: 'Could not verify output access' }, { status: 500 })
+    }
+
+    const outputAllowed = (outputs || []).some((output) => {
+      if (
+        allowedPaths.has(output.corrections_letter_pdf_path || '') ||
+        allowedPaths.has(output.response_letter_pdf_path || '')
+      ) {
+        return true
+      }
+      return jsonIncludesStoragePath(output.review_checklist_json as JsonValue, allowedPaths) ||
+        jsonIncludesStoragePath(output.corrections_analysis_json as JsonValue, allowedPaths) ||
+        jsonIncludesStoragePath(output.applicant_questions_json as JsonValue, allowedPaths) ||
+        jsonIncludesStoragePath(output.project_understanding_json as JsonValue, allowedPaths) ||
+        jsonIncludesStoragePath(output.raw_artifacts as JsonValue, allowedPaths)
+    })
+
+    if (!fileAllowed && !outputAllowed) {
+      return NextResponse.json({ error: 'Storage object is not registered for this project' }, { status: 403 })
+    }
+
+    const storagePath = normalizeStoragePath(bucket, path)[0]
     const service = createServiceClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -39,7 +99,7 @@ export async function POST(request: NextRequest) {
     )
     const { data, error } = await service.storage
       .from(bucket)
-      .createSignedUrl(path, 60 * 30)
+      .createSignedUrl(storagePath, 60 * 30)
 
     if (error || !data?.signedUrl) {
       return NextResponse.json({ error: error?.message || 'Could not create signed URL' }, { status: 500 })

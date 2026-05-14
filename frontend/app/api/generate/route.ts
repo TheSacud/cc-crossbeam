@@ -44,6 +44,14 @@ export async function POST(request: NextRequest) {
       }, { status: 500 })
     }
 
+    const workerToken = process.env.CROSSBEAM_WORKER_TOKEN
+    if (!workerToken) {
+      return NextResponse.json({
+        success: false,
+        error: 'Server not configured: CROSSBEAM_WORKER_TOKEN is not set',
+      }, { status: 500 })
+    }
+
     // Trigger Cloud Run worker
     try {
       const controller = new AbortController()
@@ -59,6 +67,7 @@ export async function POST(request: NextRequest) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${workerToken}`,
         },
         body: JSON.stringify({
           project_id,

@@ -15,6 +15,10 @@ const WINDOWS_PDFTOTEXT_CANDIDATES = [
   'C:\\Users\\Duarte\\AppData\\Local\\Microsoft\\WinGet\\Packages\\oschwartz10612.Poppler_Microsoft.Winget.Source_8wekyb3d8bbwe\\poppler-25.07.0\\Library\\bin\\pdftotext.exe',
 ];
 
+const WINDOWS_PDFINFO_CANDIDATES = [
+  'C:\\Users\\Duarte\\AppData\\Local\\Microsoft\\WinGet\\Packages\\oschwartz10612.Poppler_Microsoft.Winget.Source_8wekyb3d8bbwe\\poppler-25.07.0\\Library\\bin\\pdfinfo.exe',
+];
+
 const WINDOWS_MAGICK_CANDIDATES = [
   'C:\\Program Files\\ImageMagick-7.1.2-Q16-HDRI\\magick.exe',
 ];
@@ -35,6 +39,14 @@ export interface PageTextEntry {
   source: 'pdf-native' | 'none';
 }
 
+export interface TitleBlockTextEntry {
+  page: number;
+  text: string;
+  text_length: number;
+  has_ocr_text: boolean;
+  source: 'tesseract' | 'none';
+}
+
 export interface PreliminarySheetEntry {
   page: number;
   desenho: number | null;
@@ -43,6 +55,8 @@ export interface PreliminarySheetEntry {
   discipline: string | null;
   title_confirmed: boolean;
   scale: string | null;
+  extraction_confidence: 'high' | 'medium' | 'low';
+  needs_visual_review: boolean;
   page_png_path: string;
   title_block_png_path: string;
 }
@@ -58,6 +72,27 @@ interface UploadArtifact {
   localPath: string;
   name: string;
   contentType: string;
+}
+
+export const REQUIRED_EXTRACTION_ARTIFACTS = [
+  'pages-png.tar.gz',
+  'title-blocks.tar.gz',
+  'page-text.json',
+  'sheet-manifest.json',
+  'preflight-summary.json',
+  'document-text.json',
+  'title-block-text.json',
+] as const;
+
+interface DocumentTextArtifact {
+  generated_by: string;
+  documents: Array<{
+    filename: string;
+    file_type: string | null;
+    page_count: number;
+    pages_with_native_text: number;
+    pages: PageTextEntry[];
+  }>;
 }
 
 function resolveCommand(command: string, windowsCandidates: string[] = []): string | null {
@@ -161,7 +196,7 @@ tb_dir.mkdir(parents=True, exist_ok=True)
 doc = fitz.open(pdf_path)
 for idx, page in enumerate(doc, start=1):
     rect = page.rect
-    crop = fitz.Rect(rect.x1 * 0.75, rect.y1 * 0.65, rect.x1, rect.y1)
+    crop = fitz.Rect(rect.x0, rect.y1 * 0.76, rect.x1, rect.y1)
     pix = page.get_pixmap(dpi=${TITLE_BLOCK_DPI}, alpha=False, clip=crop)
     pix.save(tb_dir / f"title-block-{idx:02d}.png")
 `;
@@ -205,6 +240,40 @@ print(json.dumps(entries, ensure_ascii=False))
   return JSON.parse(raw) as PageTextEntry[];
 }
 
+function extractAllPageTextWithPython(pdfPath: string, tmpDir: string): PageTextEntry[] {
+  const script = `
+import json
+import sys
+from pathlib import Path
+
+try:
+    import fitz
+except Exception as exc:
+    raise SystemExit(f"PyMuPDF missing: {exc}")
+
+pdf_path = Path(sys.argv[1])
+
+doc = fitz.open(pdf_path)
+entries = []
+for idx, page in enumerate(doc):
+    text = page.get_text("text") or ""
+    text = text.replace("\\f", "").strip()
+    entries.append({
+        "page": idx + 1,
+        "text": text,
+        "text_length": len(text),
+        "has_extractable_text": bool(text),
+        "source": "pdf-native" if text else "none",
+    })
+
+print(json.dumps(entries, ensure_ascii=False))
+`;
+
+  const scriptPath = path.join(tmpDir, `extract-all-page-text-${Date.now()}.py`);
+  const raw = runInlinePython(scriptPath, script, [pdfPath]);
+  return JSON.parse(raw) as PageTextEntry[];
+}
+
 function normalizePageText(text: string): string {
   return text.replace(/\f/g, '').replace(/\r/g, '').trim();
 }
@@ -225,6 +294,7 @@ function inferDrawingNumber(text: string): number | null {
   const normalized = asciiFold(text);
   const patterns = [
     /\bdesenho\s*(?:n[.o]*\s*)?(\d{1,3})\b/,
+    /\bdesenho\s*:?\s*\n?\s*(\d{1,3})\b/,
     /\bpeca\s+desenhada\s*(?:n[.o]*\s*)?(\d{1,3})\b/,
     /\b(?:folha|sheet)\s*(?:n[.o]*\s*)?(\d{1,3})\b/,
   ];
@@ -262,14 +332,149 @@ function inferDiscipline(text: string): string | null {
   return null;
 }
 
-function inferScale(text: string): string | null {
-  const match = text.match(/\b(?:escala|scale)\s*:?\s*(1\s*[:/]\s*\d{1,4})\b/i)
-    || text.match(/\b(1\s*[:/]\s*\d{1,4})\b/);
-  return match ? compactLine(match[1]).replace(/\s+/g, '') : null;
+function canonicalScale(raw: string): string | null {
+  const allowedDenominators = new Set([
+    1, 2, 5, 10, 20, 25, 50, 75, 100, 125, 200, 250, 500,
+    1000, 2000, 5000, 10000, 25000,
+  ]);
+  const compact = raw
+    .replace(/[|[\](){}]/g, '')
+    .replace(/[il]/gi, '1')
+    .replace(/[oO]/g, '0')
+    .replace(/\s+/g, '')
+    .trim();
+
+  const compactOcrMatch = compact.match(/^11(20|50|100|200|500|1000)$/);
+  if (compactOcrMatch) {
+    const denominator = Number(compactOcrMatch[1]);
+    return allowedDenominators.has(denominator) ? `1:${denominator}` : null;
+  }
+
+  const ratioMatch = compact.match(/^([14])[:/.-]?(\d{1,5})$/);
+  if (!ratioMatch) {
+    return null;
+  }
+
+  const denominator = Number(ratioMatch[2]);
+  if (!Number.isFinite(denominator) || denominator <= 0 || !allowedDenominators.has(denominator)) {
+    return null;
+  }
+
+  // OCR often reads the leading "1" in 1:100 as "4" in compressed title blocks.
+  if (ratioMatch[1] === '4' && [20, 50, 100, 200, 500, 1000].includes(denominator)) {
+    return `1:${denominator}`;
+  }
+
+  if (ratioMatch[1] === '1') {
+    return `1:${denominator}`;
+  }
+
+  return null;
 }
 
-function inferTitle(entry: PageTextEntry): { title: string; confirmed: boolean } {
-  const lines = entry.text
+export function inferScale(text: string): string | null {
+  const candidates: string[] = [];
+  const normalized = asciiFold(text);
+
+  for (const match of normalized.matchAll(/\b(?:escala|scala|scale|esc\.?)\s*:?\s*([^\n\r]{0,24})/gi)) {
+    const window = match[1] || '';
+    const scaleLike = window.match(/([il14]\s*[:/.\-]?\s*[o0-9]{1,5})/i);
+    if (scaleLike) {
+      candidates.push(scaleLike[1]);
+    }
+  }
+
+  for (const match of normalized.matchAll(/\b([il1]\s*[:/]\s*\d{1,5})\b/gi)) {
+    candidates.push(match[1]);
+  }
+
+  for (const match of normalized.matchAll(/\b(4\s*[:/]\s*(?:20|50|100|200|500|1000))\b/gi)) {
+    candidates.push(match[1]);
+  }
+
+  for (const candidate of candidates) {
+    const canonical = canonicalScale(candidate);
+    if (canonical) {
+      return canonical;
+    }
+  }
+
+  return null;
+}
+
+function canonicalTitleFromText(text: string): string | null {
+  const normalized = asciiFold(text);
+  const compact = normalized.replace(/[^a-z0-9]/g, '');
+  const rules: Array<[RegExp, string]> = [
+    [/\blevantamento\b.*\btopograf.*\bimplant/, 'Planta Levantamento Topográfico Implantação'],
+    [/\bplanta\b.*\blocaliza/, 'Planta de Localização'],
+    [/\blevantamento\b.*\btopograf/, 'Planta Levantamento Topográfico'],
+    [/\bimplant/, 'Planta de Implantação'],
+    [/\barranjos?\b.*\bexterior/, 'Arranjos Exteriores'],
+    [/\bacessibil/, 'Planta de Acessibilidades'],
+    [/\bplanta\b.*(?:r\/?\s*c|res do chao|r\/?\s*chao|terreo)/, 'Planta do R/Chão'],
+    [/\bplanta\b.*(?:1[ºo.]?\s*andar|primeiro andar)/, 'Planta do 1º Andar'],
+    [/\bal[cç]ados?\b|\balcados?\b/, 'Alçados'],
+    [/\bpormenores?\b/, 'Pormenores'],
+    [/\bcortes?\b/, 'Cortes'],
+    [/\bquadro\b.*\bsin[oó]ptico|\bsinoptico\b/, 'Quadro Sinóptico'],
+    [/\blista\b.*\blayer/, 'Lista de Layers'],
+    [/\bcobertura\b/, 'Planta de Cobertura'],
+  ];
+
+  for (const [pattern, title] of rules) {
+    if (pattern.test(normalized)) {
+      return title;
+    }
+  }
+
+  if (
+    compact.includes('plantadelocalizacao')
+    || compact.includes('plantadeocalizacao')
+    || compact.includes('plantadeocalzacao')
+    || (compact.includes('planta') && compact.includes('zacao'))
+  ) return 'Planta de Localização';
+  if (compact.includes('plantalevantamentotopografico') && compact.includes('implantacao')) {
+    return 'Planta Levantamento Topográfico Implantação';
+  }
+  if (compact.includes('levantamentotopografico')) return 'Planta Levantamento Topográfico';
+  if (compact.includes('implantacao')) return 'Planta de Implantação';
+  if (compact.includes('arranjos') && (compact.includes('exteriores') || compact.includes('ores'))) {
+    return 'Arranjos Exteriores';
+  }
+  if (
+    compact.includes('acessibilidades')
+    || compact.includes('acessibildades')
+    || compact.includes('acessbidades')
+    || (compact.includes('acess') && compact.includes('dades'))
+  ) return 'Planta de Acessibilidades';
+  if (compact.includes('plantadorchao') || compact.includes('plantadorohao')) return 'Planta do R/Chão';
+  if (compact.includes('andar')) return 'Planta do 1º Andar';
+  if (compact.includes('cobertura') || compact.includes('jobertura')) return 'Planta de Cobertura';
+  if (compact.includes('murosdevedacao') || compact.includes('murosdevedaoao') || compact.includes('jrosdevedacao')) return 'Muros de Vedação';
+  if (compact.includes('alcados') || compact.includes('algados')) return 'Alçados';
+  if (
+    compact.includes('pormenores')
+    || compact.includes('pormnores')
+    || compact.includes('porrmenores')
+    || compact.includes('menores') && compact.includes('construtivos')
+    || compact.includes('porm') && compact.includes('construtivos')
+  ) return 'Pormenores Construtivos';
+  if (compact.includes('quadrosinoptico') || compact.includes('quadrocinoptico')) return 'Quadro Sinóptico';
+  if (compact.includes('listadelayers') || compact.includes('listadelayer')) return 'Lista de Layers';
+  if (compact.includes('cortes')) return 'Cortes';
+
+  return null;
+}
+
+function inferTitle(entry: PageTextEntry, titleBlockText = ''): { title: string; confirmed: boolean } {
+  const combinedText = [entry.text, titleBlockText].filter(Boolean).join('\n');
+  const canonical = canonicalTitleFromText(combinedText);
+  if (canonical) {
+    return { title: canonical, confirmed: true };
+  }
+
+  const lines = combinedText
     .split(/\n+/)
     .map(compactLine)
     .filter((line) => line.length >= 3 && line.length <= 120);
@@ -294,30 +499,61 @@ function inferTitle(entry: PageTextEntry): { title: string; confirmed: boolean }
     return { title, confirmed: true };
   }
 
-  const fallback = lines.find((line) => /[A-Za-z]/.test(asciiFold(line))) || titleCaseFallback(entry.page);
+  const fallback = lines.find((line) => {
+    const normalizedLine = asciiFold(line);
+    return /[a-z]/.test(normalizedLine)
+      && !/\b(projetos|arquitetura-especialidades|engenharia|consultoria|gmail|requerente|local|obra|desenho|data)\b/.test(normalizedLine);
+  }) || titleCaseFallback(entry.page);
   return { title: fallback, confirmed: false };
+}
+
+function inferManifestConfidence(
+  titleConfirmed: boolean,
+  drawingNumber: number | null,
+  scale: string | null,
+): 'high' | 'medium' | 'low' {
+  if (titleConfirmed && drawingNumber != null) {
+    return 'high';
+  }
+  if (titleConfirmed || drawingNumber != null || scale) {
+    return 'medium';
+  }
+  return 'low';
 }
 
 export function buildPreliminarySheetManifest(
   pageTextEntries: PageTextEntry[],
   sourcePdf: string,
+  titleBlockTextEntries: TitleBlockTextEntry[] = [],
 ): { source_pdf: string; generated_by: string; confidence: string; sheets: PreliminarySheetEntry[] } {
+  const titleBlockTextByPage = new Map(
+    titleBlockTextEntries.map((entry) => [entry.page, entry.text]),
+  );
+
   return {
     source_pdf: sourcePdf,
     generated_by: 'crossbeam-preextract',
     confidence: 'preliminary',
     sheets: pageTextEntries.map((entry) => {
-      const { title, confirmed } = inferTitle(entry);
+      const titleBlockText = titleBlockTextByPage.get(entry.page) || '';
+      const combinedText = [entry.text, titleBlockText].filter(Boolean).join('\n');
+      const { title, confirmed } = inferTitle(entry, titleBlockText);
+      const desenho = inferDrawingNumber(combinedText)
+        ?? (/\bdesenho\b|projetos:\s*arquitetura/i.test(asciiFold(combinedText)) ? entry.page : null);
+      const scale = inferScale(combinedText);
+      const extractionConfidence = inferManifestConfidence(confirmed, desenho, scale);
       return {
         page: entry.page,
-        desenho: inferDrawingNumber(entry.text),
+        desenho,
         title,
         notes: entry.has_extractable_text
           ? `Native PDF text available (${entry.text_length} chars)`
           : 'No native PDF text; verify with page image/title block',
         discipline: inferDiscipline(entry.text),
         title_confirmed: confirmed,
-        scale: inferScale(entry.text),
+        scale,
+        extraction_confidence: extractionConfidence,
+        needs_visual_review: extractionConfidence !== 'high',
         page_png_path: `pages-png/page-${String(entry.page).padStart(2, '0')}.png`,
         title_block_png_path: `title-blocks/title-block-${String(entry.page).padStart(2, '0')}.png`,
       };
@@ -387,6 +623,122 @@ function extractPageText(pdfPath: string, pageCount: number, tmpDir: string): Pa
   }
 }
 
+function getPdfPageCount(pdfPath: string): number {
+  const pdfinfoPath = resolveCommand('pdfinfo', WINDOWS_PDFINFO_CANDIDATES);
+  if (pdfinfoPath) {
+    const output = execFileSync(pdfinfoPath, [pdfPath], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const match = output.match(/^Pages:\s+(\d+)/m);
+    if (match) {
+      return Number(match[1]);
+    }
+  }
+
+  const pythonPath = resolvePythonCommand();
+  if (!pythonPath) {
+    throw new Error('pdfinfo or python3/PyMuPDF is required to determine PDF page count');
+  }
+
+  const script = `
+import sys
+try:
+    import fitz
+except Exception as exc:
+    raise SystemExit(f"PyMuPDF missing: {exc}")
+doc = fitz.open(sys.argv[1])
+print(len(doc))
+`;
+  const scriptPath = path.join(path.dirname(pdfPath), `pdf-page-count-${Date.now()}.py`);
+  const raw = runInlinePython(scriptPath, script, [pdfPath]);
+  const parsed = Number(raw.trim());
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`Could not determine page count for ${pdfPath}`);
+  }
+  return parsed;
+}
+
+async function downloadPdfToPath(
+  file: FileRecord,
+  destinationPath: string,
+): Promise<void> {
+  let bucket: string;
+  let storagePath: string;
+  if (file.storage_path.startsWith('crossbeam-demo-assets/')) {
+    bucket = 'crossbeam-demo-assets';
+    storagePath = file.storage_path.replace('crossbeam-demo-assets/', '');
+  } else if (file.storage_path.startsWith('crossbeam-uploads/')) {
+    bucket = 'crossbeam-uploads';
+    storagePath = file.storage_path.replace('crossbeam-uploads/', '');
+  } else {
+    bucket = 'crossbeam-uploads';
+    storagePath = file.storage_path;
+  }
+
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .download(storagePath);
+
+    if (!error && data) {
+      fs.writeFileSync(destinationPath, Buffer.from(await data.arrayBuffer()));
+      return;
+    }
+
+    lastError = error;
+    await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+  }
+
+  const message = lastError instanceof Error ? lastError.message : String(lastError);
+  throw new Error(`PDF download failed for ${file.filename}: ${message}`);
+}
+
+async function buildDocumentTextArtifact(
+  files: FileRecord[],
+  tmpDir: string,
+): Promise<DocumentTextArtifact> {
+  const pdfFiles = files.filter((file) => file.filename.toLowerCase().endsWith('.pdf'));
+  const documents: DocumentTextArtifact['documents'] = [];
+
+  for (const file of pdfFiles) {
+    const pdfPath = path.join(tmpDir, `doc-text-${documents.length + 1}.pdf`);
+    try {
+      await downloadPdfToPath(file, pdfPath);
+      let pages: PageTextEntry[];
+      try {
+        const pageCount = getPdfPageCount(pdfPath);
+        pages = extractPageText(pdfPath, pageCount, tmpDir);
+      } catch (popplerError) {
+        console.warn(`Poppler text extraction failed for ${file.filename}, falling back to PyMuPDF:`, popplerError);
+        pages = extractAllPageTextWithPython(pdfPath, tmpDir);
+      }
+      documents.push({
+        filename: file.filename,
+        file_type: file.file_type || null,
+        page_count: pages.length,
+        pages_with_native_text: pages.filter((page) => page.has_extractable_text).length,
+        pages,
+      });
+    } catch (error) {
+      console.warn(`Failed to extract document text for ${file.filename}:`, error);
+      documents.push({
+        filename: file.filename,
+        file_type: file.file_type || null,
+        page_count: 0,
+        pages_with_native_text: 0,
+        pages: [],
+      });
+    }
+  }
+
+  return {
+    generated_by: 'crossbeam-preextract',
+    documents,
+  };
+}
+
 function renamePagePngs(pagesDir: string): void {
   for (const file of fs.readdirSync(pagesDir).filter(name => name.startsWith('page-'))) {
     const match = file.match(/page-0*(\d+)\.png/);
@@ -421,9 +773,9 @@ function cropTitleBlocksWithImageMagick(
       throw new Error(`Could not read dimensions for ${pageFile}`);
     }
 
-    const cropW = Math.floor(w * 25 / 100);
-    const cropH = Math.floor(h * 35 / 100);
-    const cropX = w - cropW;
+    const cropW = w;
+    const cropH = Math.floor(h * 24 / 100);
+    const cropX = 0;
     const cropY = h - cropH;
 
     execFileSync(
@@ -432,6 +784,99 @@ function cropTitleBlocksWithImageMagick(
       { timeout: 30_000, stdio: 'pipe' },
     );
   }
+}
+
+function extractTitleBlockTexts(
+  imageMagick: ImageMagickCommands,
+  tbDir: string,
+  tmpDir: string,
+): TitleBlockTextEntry[] {
+  const tesseractPath = resolveCommand('tesseract');
+  const titleBlockFiles = fs.readdirSync(tbDir)
+    .filter(name => name.endsWith('.png'))
+    .sort();
+
+  if (!tesseractPath) {
+    console.warn('tesseract not found; title block OCR artifact will be empty');
+    return titleBlockFiles.map((file) => {
+      const page = Number(file.match(/title-block-0*(\d+)\.png/)?.[1] || 0);
+      return {
+        page,
+        text: '',
+        text_length: 0,
+        has_ocr_text: false,
+        source: 'none',
+      };
+    });
+  }
+  const tesseractCommand = tesseractPath;
+
+  function mergeOcrText(...texts: string[]): string {
+    const seen = new Set<string>();
+    const lines: string[] = [];
+    for (const text of texts) {
+      for (const line of text.split(/\n+/).map(compactLine).filter(Boolean)) {
+        const key = asciiFold(line).replace(/\s+/g, ' ');
+        if (!seen.has(key)) {
+          seen.add(key);
+          lines.push(line);
+        }
+      }
+    }
+    return lines.join('\n');
+  }
+
+  function runTesseract(inputPath: string, psm: string): string {
+    return normalizePageText(execFileSync(
+      tesseractCommand,
+      [inputPath, 'stdout', '-l', 'por+eng', '--psm', psm],
+      { encoding: 'utf8', timeout: 60_000, stdio: ['ignore', 'pipe', 'pipe'] },
+    ));
+  }
+
+  return titleBlockFiles.map((file) => {
+    const page = Number(file.match(/title-block-0*(\d+)\.png/)?.[1] || 0);
+    const inputPath = path.join(tbDir, file);
+    const processedPath = path.join(tmpDir, `ocr-${file}`);
+
+    try {
+      execFileSync(
+        imageMagick.convert[0],
+        [
+          ...imageMagick.convert.slice(1),
+          inputPath,
+          '-colorspace', 'Gray',
+          '-resize', '220%',
+          '-contrast-stretch', '0.5%x0.5%',
+          '-sharpen', '0x1',
+          processedPath,
+        ],
+        { timeout: 30_000, stdio: 'pipe' },
+      );
+
+      const text = mergeOcrText(
+        runTesseract(processedPath, '6'),
+        runTesseract(processedPath, '11'),
+      );
+
+      return {
+        page,
+        text,
+        text_length: text.length,
+        has_ocr_text: text.length > 0,
+        source: text.length > 0 ? 'tesseract' : 'none',
+      } satisfies TitleBlockTextEntry;
+    } catch (error) {
+      console.warn(`Title block OCR failed for ${file}:`, error);
+      return {
+        page,
+        text: '',
+        text_length: 0,
+        has_ocr_text: false,
+        source: 'none',
+      } satisfies TitleBlockTextEntry;
+    }
+  });
 }
 
 async function upsertArtifactRecord(
@@ -472,6 +917,28 @@ async function upsertArtifactRecord(
   }
 }
 
+export async function getMissingExtractionArtifacts(projectId: string): Promise<string[]> {
+  const { data: files, error } = await supabase
+    .schema('crossbeam')
+    .from('files')
+    .select('filename')
+    .eq('project_id', projectId);
+
+  if (error) {
+    throw new Error(`Failed to check extraction artifacts: ${error.message}`);
+  }
+
+  const filenames = new Set((files || []).map((file: { filename: string }) => file.filename));
+  return REQUIRED_EXTRACTION_ARTIFACTS.filter((name) => !filenames.has(name));
+}
+
+export async function assertExtractionArtifactsReady(projectId: string): Promise<void> {
+  const missing = await getMissingExtractionArtifacts(projectId);
+  if (missing.length > 0) {
+    throw new Error(`Required extraction artifacts missing: ${missing.join(', ')}`);
+  }
+}
+
 /**
  * Extract a PDF binder into page PNGs + title block crops on Cloud Run,
  * then upload the archives back to Supabase Storage and insert file records.
@@ -494,14 +961,7 @@ export async function extractPdfForProject(
   }
 
   const existingFiles = (files || []) as FileRecord[];
-  const requiredArtifacts = [
-    'pages-png.tar.gz',
-    'title-blocks.tar.gz',
-    'page-text.json',
-    'sheet-manifest.json',
-    'preflight-summary.json',
-  ];
-  const hasAllArtifacts = requiredArtifacts.every((name) => existingFiles.some((file) => file.filename === name));
+  const hasAllArtifacts = REQUIRED_EXTRACTION_ARTIFACTS.every((name) => existingFiles.some((file) => file.filename === name));
   if (hasAllArtifacts && !options.force) {
     console.log(`Project ${projectId}: extraction artifacts already exist, skipping extraction`);
     return;
@@ -585,13 +1045,19 @@ export async function extractPdfForProject(
     const tbCount = fs.readdirSync(tbDir).filter(name => name.endsWith('.png')).length;
     console.log(`Cropped ${tbCount} title blocks at up to ${TITLE_BLOCK_DPI} DPI`);
 
+    const titleBlockTextEntries = extractTitleBlockTexts(imageMagick, tbDir, tmpDir);
+    const titleBlockTextPath = path.join(tmpDir, 'title-block-text.json');
+    fs.writeFileSync(titleBlockTextPath, JSON.stringify(titleBlockTextEntries, null, 2), 'utf8');
+    const titleBlocksWithOcrText = titleBlockTextEntries.filter((entry) => entry.has_ocr_text).length;
+    console.log(`OCR extracted title-block text from ${titleBlocksWithOcrText}/${tbCount} title blocks`);
+
     const pageTextEntries = extractPageText(pdfPath, pageCount, tmpDir);
     const pageTextPath = path.join(tmpDir, 'page-text.json');
     fs.writeFileSync(pageTextPath, JSON.stringify(pageTextEntries, null, 2), 'utf8');
     const pagesWithNativeText = pageTextEntries.filter((entry) => entry.has_extractable_text).length;
     console.log(`Extracted native PDF text from ${pagesWithNativeText}/${pageCount} pages`);
 
-    const preliminaryManifest = buildPreliminarySheetManifest(pageTextEntries, pdfFile.filename);
+    const preliminaryManifest = buildPreliminarySheetManifest(pageTextEntries, pdfFile.filename, titleBlockTextEntries);
     const sheetManifestPath = path.join(tmpDir, 'sheet-manifest.json');
     fs.writeFileSync(sheetManifestPath, JSON.stringify(preliminaryManifest, null, 2), 'utf8');
 
@@ -601,6 +1067,10 @@ export async function extractPdfForProject(
       JSON.stringify(buildPreflightSummary(pageTextEntries, preliminaryManifest), null, 2),
       'utf8',
     );
+
+    const documentTextPath = path.join(tmpDir, 'document-text.json');
+    const documentText = await buildDocumentTextArtifact(existingFiles, tmpDir);
+    fs.writeFileSync(documentTextPath, JSON.stringify(documentText, null, 2), 'utf8');
 
     const pagesArchive = path.join(tmpDir, 'pages-png.tar.gz');
     const tbArchive = path.join(tmpDir, 'title-blocks.tar.gz');
@@ -619,8 +1089,10 @@ export async function extractPdfForProject(
       { localPath: pagesArchive, name: 'pages-png.tar.gz', contentType: 'application/gzip' },
       { localPath: tbArchive, name: 'title-blocks.tar.gz', contentType: 'application/gzip' },
       { localPath: pageTextPath, name: 'page-text.json', contentType: 'application/json' },
+      { localPath: titleBlockTextPath, name: 'title-block-text.json', contentType: 'application/json' },
       { localPath: sheetManifestPath, name: 'sheet-manifest.json', contentType: 'application/json' },
       { localPath: preflightSummaryPath, name: 'preflight-summary.json', contentType: 'application/json' },
+      { localPath: documentTextPath, name: 'document-text.json', contentType: 'application/json' },
     ];
 
     for (const artifact of artifacts) {

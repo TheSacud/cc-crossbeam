@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import { generateRouter } from './routes/generate.js';
 import { extractRouter } from './routes/extract.js';
+import { requireInternalWorkerToken } from './middleware/internal-auth.js';
 
 const app = express();
 
@@ -14,8 +15,8 @@ app.get('/health', (req, res) => {
 });
 
 // Routes
-app.use('/generate', generateRouter);
-app.use('/extract', extractRouter);
+app.use('/generate', requireInternalWorkerToken, generateRouter);
+app.use('/extract', requireInternalWorkerToken, extractRouter);
 
 // Error handler
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {

@@ -398,7 +398,7 @@ test('analysis phase persists normalized findings and enriched applicant questio
   const analysisArtifacts = buildViseuAnalysisArtifactsForSandbox(rawFiles);
   const outputData = buildAnalysisPhaseOutputData(rawFiles);
 
-  assert.equal(analysisArtifacts.normalizedFindings?.[0].determination_status, 'needs_official_source');
+  assert.equal(analysisArtifacts.normalizedFindings?.[0].determination_status, 'inconclusive');
   assert.equal(analysisArtifacts.normalizedFindings?.[1].determination_status, 'document_missing_or_incomplete');
   assert.equal(
     analysisArtifacts.normalizedContractorQuestions?.question_groups[0].questions[0].related_finding_ids[0],
@@ -406,7 +406,7 @@ test('analysis phase persists normalized findings and enriched applicant questio
   );
   assert.equal(
     outputData.applicant_questions_json?.question_groups[0].questions[0].determination_status,
-    'needs_official_source',
+    'inconclusive',
   );
 });
 
@@ -515,7 +515,7 @@ test('review gate demotes unsupported blocker and preserves it as additional cor
 
   const { canonicalReviewChecklist } = buildCanonicalViseuReviewArtifacts(rawFiles);
   assert.equal(canonicalReviewChecklist?.blocking_issues.length, 0);
-  assert.equal(canonicalReviewChecklist?.depends_on_pdmv_items.length, 1);
+  assert.equal(canonicalReviewChecklist?.depends_on_pdmv_items.length, 0);
   assert.equal(canonicalReviewChecklist?.additional_corrections[0].reason, 'demoted_from_blocking_issue_due_to_insufficient_support');
 });
 

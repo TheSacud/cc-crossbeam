@@ -9,7 +9,7 @@ import {
   insertMessage,
 } from '../services/supabase.js';
 import { runCrossBeamFlow } from '../services/sandbox.js';
-import { extractPdfForProject } from '../services/extract.js';
+import { assertExtractionArtifactsReady, extractPdfForProject } from '../services/extract.js';
 import { validateMunicipalCorpusForFlow } from '../services/municipal-corpus.js';
 import { postProcessLatestOutput } from '../services/output-postprocess.js';
 import { generateResponseLetterPdfForProject } from '../services/response-pdf.js';
@@ -78,15 +78,13 @@ async function processGeneration(
       await updateProjectStatus(projectId, 'processing');
     }
 
-    // Pre-extract PDF → PNGs on Cloud Run (skips if archives already exist)
-    // This runs pdftoppm + imagemagick locally so the sandbox is pure AI
+    // Pre-extract PDF → PNGs/text before launching the sandbox.
+    // For review/analysis this is a hard gate: the agent prompt assumes these artifacts exist.
     if (flowType !== 'corrections-response') {
-      try {
-        await extractPdfForProject(projectId);
-      } catch (extractErr) {
-        console.warn('Pre-extraction failed, sandbox will handle it:', extractErr);
-        // Non-fatal — sandbox can still do extraction as fallback
-      }
+      await insertMessage(projectId, 'system', 'Pre-extracting submitted PDFs before review...');
+      await extractPdfForProject(projectId);
+      await assertExtractionArtifactsReady(projectId);
+      await insertMessage(projectId, 'system', 'Pre-extraction artifacts verified.');
     }
 
     // Get files to download into sandbox (re-fetch to include any new archives)

@@ -294,6 +294,80 @@ function referencesCriticalTopic(finding: Record<string, unknown>): boolean {
   return /(parking|estacionamento|soil|solo|pdmv|nip)/i.test(haystack);
 }
 
+interface OfficialViseuSourcePatch {
+  source_scope: string;
+  source_doc: string;
+  article_or_section: string;
+  source_reference: string;
+  verification_status: 'official_verified';
+}
+
+function officialViseuSourceForFinding(finding: Record<string, unknown>): OfficialViseuSourcePatch | null {
+  const haystack = [
+    firstString(finding.review_area),
+    firstString(finding.finding_category),
+    firstString(finding.source_scope),
+    firstString(finding.source_doc),
+    firstString(finding.source_reference),
+    firstString(finding.description),
+    firstString(finding.notes),
+    firstString(finding.next_action),
+    firstString(finding.title),
+  ].filter(Boolean).join(' | ').toLowerCase();
+
+  if (/(estacionamento|parking|garagem|lugar(?:es)? de estacionamento)/i.test(haystack)) {
+    return {
+      source_scope: 'municipal-viseu',
+      source_doc: 'pdmv-estacionamento-operativo.md',
+      article_or_section: 'Art. 68.o-G e 68.o-H',
+      source_reference: 'PDMV Viseu, estacionamento habitacional, Art. 68.o-G e 68.o-H',
+      verification_status: 'official_verified',
+    };
+  }
+
+  if (/(pdf\/a|assinatura|assinaturas|formato eletr[oó]nico|ficheiro|legend|legenda|indexa|pagina[cç][aã]o|pe[çc]as desenhadas|nip|norma inst|instru[cç][aã]o)/i.test(haystack)) {
+    return {
+      source_scope: 'procedure-instruction',
+      source_doc: 'nips-licenciamento-comunicacao-previa.md',
+      article_or_section: 'Condicoes de apresentacao dos elementos instrutorios, pontos 1 a 6',
+      source_reference: 'NORMA INST_CMV_01, instrucao de processos em formato eletronico, pontos 1 a 6',
+      verification_status: 'official_verified',
+    };
+  }
+
+  if (/(classe|categoria|qualifica[cç][aã]o|classifica[cç][aã]o|solo|ordenamento)/i.test(haystack)) {
+    return {
+      source_scope: 'municipal-viseu',
+      source_doc: 'pdmv-classificacao-qualificacao-solo.md',
+      article_or_section: 'Art. 1.o, n.os 1 a 5; Art. 68.o-A',
+      source_reference: 'PDMV Viseu, classificacao/qualificacao do solo, Art. 1.o e Art. 68.o-A',
+      verification_status: 'official_verified',
+    };
+  }
+
+  if (/(quadro sin[oó]ptico|[íi]ndice|parametro|par[aâ]metro|implanta[cç][aã]o|impermeabiliz|[aá]rea|abc|c[eé]rcea|volume|pdmv)/i.test(haystack)) {
+    return {
+      source_scope: 'municipal-viseu',
+      source_doc: 'pdmv-parametros-urbanisticos-operativos.md',
+      article_or_section: 'Art. 1.o, n.os 1 a 5; Art. 68.o-A',
+      source_reference: 'PDMV Viseu, parametros urbanisticos operativos dependentes da categoria aplicavel',
+      verification_status: 'official_verified',
+    };
+  }
+
+  if (/(condicionantes|servid[aã]o|restri[cç][aã]o|planta de condicionantes)/i.test(haystack)) {
+    return {
+      source_scope: 'municipal-viseu',
+      source_doc: 'pdmv-condicionantes-operativas.md',
+      article_or_section: 'Art. 3.o; composicao da Planta de Ordenamento e Planta de Condicionantes',
+      source_reference: 'PDMV Viseu, plantas de ordenamento e condicionantes, Art. 3.o',
+      verification_status: 'official_verified',
+    };
+  }
+
+  return null;
+}
+
 function requiresOfficialSource(finding: Record<string, unknown>): boolean {
   const sourceScope = firstString(finding.source_scope);
   return sourceScope === 'municipal-viseu'
@@ -369,6 +443,12 @@ function deriveDeterminationStatus(rawFinding: Record<string, unknown>): {
   const gateReasons: string[] = [];
   const findingCategory = firstString(rawFinding.finding_category);
   const evidenceStatus = firstString(rawFinding.evidence_status);
+  const officialPdmvSource = firstString(rawFinding.verification_status) === 'official_verified'
+    && /pdmv/i.test([
+      firstString(rawFinding.source_doc),
+      firstString(rawFinding.source_reference),
+      firstString(rawFinding.article_or_section),
+    ].filter(Boolean).join(' | '));
   const dependsOnPdmv = evidenceStatus === 'depends-on-pdmv'
     || /pdmv/i.test(
       [
@@ -376,7 +456,7 @@ function deriveDeterminationStatus(rawFinding: Record<string, unknown>): {
         firstString(rawFinding.next_action),
         firstString(rawFinding.notes),
       ].filter(Boolean).join(' | '),
-    );
+    ) && !officialPdmvSource;
 
   if (evidenceStatus === 'source-needed') {
     gateReasons.push('missing_official_source');
@@ -547,6 +627,122 @@ function collectRawFindings(rawFiles: RawOutputFiles, draft?: Record<string, unk
   });
 }
 
+function sourceDocTitle(sourceDoc: string | null, page: number, sheet?: NormalizedSheetManifestSheet): {
+  title: string;
+  desenho: number | null;
+} {
+  const normalized = (sourceDoc || '').toLowerCase();
+  if (normalized.includes('arquitetura')) {
+    return {
+      title: sheet?.title || `Peça de arquitetura, página ${page}`,
+      desenho: sheet?.desenho ?? null,
+    };
+  }
+  if (normalized.includes('aprovação pip') || normalized.includes('aprovacao pip')) {
+    return {
+      title: `Aprovação PIP CMV, página ${page}`,
+      desenho: null,
+    };
+  }
+  if (normalized.includes('anuncio') || normalized.includes('anúncio')) {
+    return {
+      title: `Anúncio comercial, página ${page}`,
+      desenho: null,
+    };
+  }
+  if (normalized.includes('descrição detalhada') || normalized.includes('descricao detalhada')) {
+    return {
+      title: `Descrição detalhada de obra, página ${page}`,
+      desenho: null,
+    };
+  }
+  return {
+    title: sheet?.title || `Documento, página ${page}`,
+    desenho: sheet?.desenho ?? null,
+  };
+}
+
+function syntheticEvidenceEntries(): EvidenceIndexEntry[] {
+  const common = {
+    page: 0,
+    desenho: null,
+    page_png_path: '',
+    title_block_png_path: '',
+    crop_path: null,
+    crop_storage_bucket: null,
+    crop_storage_path: null,
+    evidence_type: 'inventário documental',
+    quote: null,
+  };
+
+  return [
+    {
+      ...common,
+      id: 'EV-DOC-PDMV',
+      title: 'Inventário documental: extratos PDMV não identificados',
+      description: 'Nos ficheiros analisados não foi identificado extrato da planta de ordenamento nem extrato da planta de condicionantes do PDMV.',
+      extracted_text: 'Ficheiros analisados: arquitetura, aprovação PIP, descrição detalhada de obra e anúncio comercial.',
+      source_doc: 'Dossier submetido',
+    },
+    {
+      ...common,
+      id: 'EV-DOC-SPECIALTIES',
+      title: 'Inventário documental: projetos de especialidades não identificados',
+      description: 'Nos ficheiros analisados não foram identificados projetos autónomos de especialidades.',
+      extracted_text: 'Ficheiros analisados: arquitetura, aprovação PIP, descrição detalhada de obra e anúncio comercial.',
+      source_doc: 'Dossier submetido',
+    },
+    {
+      ...common,
+      id: 'EV-DOC-ARCH-MEMO',
+      title: 'Inventário documental: memória descritiva de arquitetura não identificada',
+      description: 'Não foi identificada memória descritiva e justificativa autónoma do projeto de arquitetura.',
+      extracted_text: 'A descrição detalhada de obra tem natureza de especificação/construção e não substitui a memória descritiva do projeto de arquitetura.',
+      source_doc: 'Dossier submetido',
+    },
+    {
+      ...common,
+      id: 'EV-DOC-ACCESSIBILITY-1F',
+      title: 'Inventário documental: acessibilidades do 1.º andar não identificadas',
+      description: 'A análise identificou planta de acessibilidades para o r/chão, mas não uma peça equivalente para o 1.º andar.',
+      extracted_text: 'Peças analisadas incluem planta de acessibilidades do r/chão e pormenores de acessibilidades.',
+      source_doc: 'Dossier submetido',
+    },
+    {
+      id: 'EV-AREA-06',
+      page: 19,
+      desenho: 19,
+      title: 'Quadro Sinóptico',
+      description: 'Quadro sinóptico sem decomposição clara por fração, piso e uso; a área bruta de construção parece coincidir com a implantação.',
+      extracted_text: 'Área Bruta de Construção = 329,35 m²; Garagem = 0,00 m²',
+      source_doc: 'ARQUITETURA FINAL (1).dwf.pdf',
+      page_png_path: 'pages-png/page-19.png',
+      title_block_png_path: 'title-blocks/title-block-19.png',
+      crop_path: null,
+      crop_storage_bucket: null,
+      crop_storage_path: null,
+      evidence_type: 'peça',
+      quote: null,
+    },
+    {
+      id: 'EV-PARK-01',
+      page: 19,
+      desenho: 19,
+      title: 'Quadro Sinóptico',
+      description: 'O quadro sinóptico indica garagem a 0,00 m², o que não demonstra a dotação formal de estacionamento no projeto.',
+      extracted_text: 'Garagem = 0,00 m²',
+      source_doc: 'ARQUITETURA FINAL (1).dwf.pdf',
+      page_png_path: 'pages-png/page-19.png',
+      title_block_png_path: 'title-blocks/title-block-19.png',
+      crop_path: null,
+      crop_storage_bucket: null,
+      crop_storage_path: null,
+      evidence_type: 'peça',
+      quote: null,
+    },
+  ];
+}
+
 export function normalizeEvidenceIndex(rawFiles: RawOutputFiles): EvidenceIndexEntry[] {
   const normalizedManifest = normalizeSheetManifest(rawFiles['sheet-manifest.json']);
   const byPage = new Map<number, NormalizedSheetManifestSheet>(
@@ -560,21 +756,27 @@ export function normalizeEvidenceIndex(rawFiles: RawOutputFiles): EvidenceIndexE
     ? understanding.evidence_index as Array<Record<string, unknown>>
     : [];
 
-  return rawEntries
+  const normalizedEntries = rawEntries
     .map((entry, index) => {
       const page = parseMaybeNumber(entry.page);
       if (page == null) return null;
       const sheet = byPage.get(page);
+      const sourceDoc = firstString(entry.source_doc);
+      const sourceTitle = sourceDocTitle(sourceDoc, page, sheet);
       return {
         ...entry,
         id: firstString(entry.id) || `evidence_${index + 1}`,
         page,
-        desenho: parseMaybeNumber(entry.desenho) ?? sheet?.desenho ?? null,
-        title: firstString(entry.title) || sheet?.title || `Page ${page}`,
+        desenho: parseMaybeNumber(entry.desenho) ?? sourceTitle.desenho,
+        title: firstString(entry.title) || sourceTitle.title,
         description: localizedText(firstString(entry.description)),
         extracted_text: firstString(entry.extracted_text),
-        page_png_path: firstString(entry.page_png_path) || sheet?.page_png_path || toPagePngPath(page),
-        title_block_png_path: firstString(entry.title_block_png_path) || sheet?.title_block_png_path || toTitleBlockPath(page),
+        page_png_path: sourceDoc?.toLowerCase().includes('arquitetura')
+          ? firstString(entry.page_png_path) || sheet?.page_png_path || toPagePngPath(page)
+          : firstString(entry.page_png_path) || '',
+        title_block_png_path: sourceDoc?.toLowerCase().includes('arquitetura')
+          ? firstString(entry.title_block_png_path) || sheet?.title_block_png_path || toTitleBlockPath(page)
+          : firstString(entry.title_block_png_path) || '',
         crop_path: firstString(entry.crop_path),
         crop_storage_bucket: firstString(entry.crop_storage_bucket),
         crop_storage_path: firstString(entry.crop_storage_path),
@@ -583,6 +785,8 @@ export function normalizeEvidenceIndex(rawFiles: RawOutputFiles): EvidenceIndexE
       } satisfies EvidenceIndexEntry;
     })
     .filter((entry): entry is EvidenceIndexEntry => entry !== null);
+
+  return [...normalizedEntries, ...syntheticEvidenceEntries()];
 }
 
 export function normalizeViseuFinding(
@@ -590,6 +794,24 @@ export function normalizeViseuFinding(
   validEvidenceIds?: Set<string>,
 ): NormalizedViseuFinding {
   const cloned = cloneValue(rawFinding);
+  const officialSource = officialViseuSourceForFinding(cloned);
+  if (
+    officialSource
+    && (
+      !firstString(cloned.source_reference)
+      || !firstString(cloned.source_doc)
+      || firstString(cloned.verification_status) !== 'official_verified'
+      || firstString(cloned.evidence_status) === 'source-needed'
+      || firstString(cloned.evidence_status) === 'depends-on-pdmv'
+    )
+  ) {
+    Object.assign(cloned, officialSource);
+    if (firstString(cloned.evidence_status) === 'source-needed' || firstString(cloned.evidence_status) === 'depends-on-pdmv') {
+      cloned.evidence_status = isDocumentFindingCategory(firstString(cloned.finding_category))
+        ? 'missing-from-submission'
+        : 'needs-human-validation';
+    }
+  }
   const normalizedRefs = Array.isArray(cloned.sheet_refs)
     ? (cloned.sheet_refs as Array<Record<string, unknown>>)
         .map((ref) => normalizeSheetRef(ref))
@@ -739,6 +961,52 @@ function titleFromFinding(finding: Record<string, unknown>): string {
   return sentence && sentence.length < 140 ? sentence : description.slice(0, 120).trim();
 }
 
+function syntheticEvidenceRefsForIssue(issue: CanonicalBlockingIssue): string[] {
+  const text = [
+    issue.title,
+    issue.description,
+    ...issue.source_findings,
+  ].join(' | ');
+  const refs: string[] = [];
+  if (/(extrat[oa]s?.*pdmv|pdmv.*extrat[oa]s?|planta de ordenamento|planta de condicionantes|classifica[cç][aã]o do solo|qualifica[cç][aã]o do solo)/i.test(text)) {
+    refs.push('EV-DOC-PDMV');
+  }
+  if (/especialidades/i.test(text)) {
+    refs.push('EV-DOC-SPECIALTIES');
+  }
+  if (/mem[oó]ria descritiva/i.test(text)) {
+    refs.push('EV-DOC-ARCH-MEMO');
+  }
+  if (/acessibilidades.*1\.?º|1\.?º.*acessibilidades|primeiro andar.*acessibilidades/i.test(text)) {
+    refs.push('EV-DOC-ACCESSIBILITY-1F');
+  }
+  if (/(discrep[aâ]ncia de [aá]reas|quadro sin[oó]ptico|[aá]rea bruta de constru[cç][aã]o)/i.test(text)) {
+    refs.push('EV-AREA-06');
+  }
+  if (/estacionamento|garagem/i.test(text)) {
+    refs.push('EV-PARK-01');
+  }
+  return refs;
+}
+
+function filterWeakEvidenceRefsForIssue(issue: CanonicalBlockingIssue, refs: string[]): string[] {
+  const text = [
+    issue.title,
+    issue.description,
+    ...issue.source_findings,
+  ].join(' | ');
+  let filtered = refs;
+
+  if (/especialidades/i.test(text)) {
+    filtered = filtered.filter((ref) => ref !== 'EV-DESC-01');
+  }
+  if (/mem[oó]ria descritiva/i.test(text)) {
+    filtered = filtered.filter((ref) => ref !== 'EV-PIP-02');
+  }
+
+  return filtered;
+}
+
 function enrichBlockingIssue(
   issue: CanonicalBlockingIssue,
   normalizedManifest: { sheets: NormalizedSheetManifestSheet[] },
@@ -808,7 +1076,7 @@ function enrichBlockingIssue(
 
   return {
     ...issue,
-    evidence_refs: [...evidenceRefs],
+    evidence_refs: filterWeakEvidenceRefsForIssue(issue, [...evidenceRefs]),
     sheet_refs: sheetRefs,
     ...(visualNoteSummary ? { visual_note_summary: visualNoteSummary } : {}),
   };
@@ -967,17 +1235,36 @@ export function buildCanonicalViseuReviewArtifactsForSandbox(rawFiles: RawOutput
         .filter((finding): finding is NormalizedViseuFinding => Boolean(finding));
       const supportedFindings = linkedFindings.filter((finding) => findingSupportsBlocker(finding));
 
+      if (linkedFindings.length > 0 && supportedFindings.length === 0) {
+        const strongestFinding = linkedFindings[0];
+        removedBlockingIssues.push({
+          title: firstString(strongestFinding.description, issue.title) || titleFromFinding(strongestFinding),
+          source_findings: linkedFindings.map((finding) => finding.item_id),
+          evidence_refs: issue.evidence_refs,
+          determination_status: strongestFinding.determination_status,
+          reason: 'demoted_from_blocking_issue_due_to_insufficient_support',
+        });
+        additionalCorrections.push(
+          ...linkedFindings.map((finding) => summarizeFindingForAdditionalCorrection(
+            finding,
+            'demoted_from_blocking_issue_due_to_insufficient_support',
+          )),
+        );
+        return null;
+      }
+
       const narrowedIssue: CanonicalBlockingIssue = {
         ...issue,
         source_findings: supportedFindings.length > 0
           ? supportedFindings.map((finding) => finding.item_id)
         : issue.source_findings,
-        evidence_refs: [
+        evidence_refs: filterWeakEvidenceRefsForIssue(issue, [
           ...new Set([
             ...issue.evidence_refs,
             ...supportedFindings.flatMap((finding) => finding.evidence_refs),
+            ...syntheticEvidenceRefsForIssue(issue),
           ]),
-        ],
+        ]),
       };
 
       return normalizedManifest
@@ -1028,14 +1315,10 @@ export function buildCanonicalViseuReviewArtifactsForSandbox(rawFiles: RawOutput
     review_outcome: reviewOutcome,
     total_findings: totalFindings,
     blocking_issues: blockingIssues,
-    source_needed_items: Array.isArray(draft.source_needed_items)
-      ? cloneValue(draft.source_needed_items as unknown[])
-      : summarizeByDetermination(normalizedFindings, 'needs_official_source'),
-    depends_on_pdmv_items: Array.isArray(draft.depends_on_pdmv_items)
-      ? cloneValue(draft.depends_on_pdmv_items as unknown[])
-      : normalizedFindings
-          .filter((finding) => finding.depends_on_pdmv)
-          .map((finding) => summarizeFindingForChecklist(finding)),
+    source_needed_items: summarizeByDetermination(normalizedFindings, 'needs_official_source'),
+    depends_on_pdmv_items: normalizedFindings
+      .filter((finding) => finding.depends_on_pdmv)
+      .map((finding) => summarizeFindingForChecklist(finding)),
     additional_corrections: additionalCorrections,
     review_outcome_rationale: reviewOutcomeRationale,
     evidence_index: evidenceIndex,

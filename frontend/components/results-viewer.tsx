@@ -28,6 +28,7 @@ interface EvidenceEntry {
   title: string
   description: string | null
   extracted_text: string | null
+  source_doc: string | null
   evidence_type: string
   quote: string | null
   page_png_path: string | null
@@ -90,6 +91,7 @@ function evidenceFromRecord(value: Json): EvidenceEntry | null {
     title: asString(record.title) || (page ? `Página ${page}` : id),
     description: asString(record.description),
     extracted_text: asString(record.extracted_text),
+    source_doc: asString(record.source_doc),
     evidence_type: asString(record.evidence_type) || 'documento',
     quote: asString(record.quote),
     page_png_path: asString(record.page_png_path),
@@ -200,6 +202,7 @@ function EvidencePanel({ output }: { output: Output }) {
               <div className="flex flex-wrap items-center gap-2 text-sm font-body">
                 <span className="font-semibold text-foreground">{entry.id}</span>
                 <span className="text-muted-foreground">{entry.evidence_type}</span>
+                {entry.source_doc && <span className="text-muted-foreground">{entry.source_doc}</span>}
                 {entry.page && <span className="text-muted-foreground">Página {entry.page}</span>}
                 {entry.desenho && <span className="text-muted-foreground">Desenho {entry.desenho}</span>}
               </div>

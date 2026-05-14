@@ -2,8 +2,18 @@ import ms from 'ms';
 
 // --- Sandbox & Agent Defaults ---
 
+function parseDuration(value: string): number {
+  const parsed = ms(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`Invalid SANDBOX_TIMEOUT duration: ${value}`);
+  }
+  return parsed;
+}
+
+const configuredSandboxTimeout = parseDuration(process.env.SANDBOX_TIMEOUT || '45m');
+
 export const CONFIG = {
-  SANDBOX_TIMEOUT: ms('30m'),
+  SANDBOX_TIMEOUT: configuredSandboxTimeout,
   SANDBOX_VCPUS: 4,
   RUNTIME: 'node22' as const,
   MODEL: 'claude-opus-4-6',
@@ -190,8 +200,11 @@ PRE-EXTRACTED DATA:
 - Page PNGs are ALREADY extracted at full DPI in ${SANDBOX_FILES_PATH}/pages-png/
 - Title block crops are ALREADY in ${SANDBOX_FILES_PATH}/title-blocks/
 - Native PDF text, when available, is already in ${SANDBOX_FILES_PATH}/page-text.json
+- OCR text from title block crops may be available in ${SANDBOX_FILES_PATH}/title-block-text.json
+- Text extracted from every submitted PDF, including supporting documents, may be available in ${SANDBOX_FILES_PATH}/document-text.json
 - A deterministic preliminary sheet manifest may already be loaded at ${SANDBOX_OUTPUT_PATH}/sheet-manifest.json
 - Preflight extraction metadata may be available at ${SANDBOX_FILES_PATH}/preflight-summary.json
+- If ${SANDBOX_OUTPUT_PATH}/sheet-manifest.json is absent but ${SANDBOX_FILES_PATH}/sheet-manifest.json exists, treat the latter as a machine-generated hint and verify it against title-block-text.json plus page images/title blocks before writing the authoritative manifest.
 - Do NOT run extract-pages.sh or crop-title-blocks.sh - they are already done.
 - Go straight to reading the cover sheet and building the sheet manifest.
 `;
@@ -263,6 +276,8 @@ ${VISEU_EVIDENCE_STATUS_LINES}
 PHASE 1 - Manifest:
 - Reuse ${SANDBOX_OUTPUT_PATH}/sheet-manifest.json when present.
 - Otherwise build it from the cover sheet and title blocks.
+- If only ${SANDBOX_FILES_PATH}/sheet-manifest.json exists, use it as a machine-generated hint, not as final ground truth; verify it against ${SANDBOX_FILES_PATH}/title-block-text.json plus page images/title blocks and write a corrected authoritative manifest to ${SANDBOX_OUTPUT_PATH}/sheet-manifest.json.
+- Use ${SANDBOX_FILES_PATH}/document-text.json to ground facts from supporting PDFs such as PIP approvals, descriptive memoranda, notices, advertisements, and other non-plan-binder documents.
 
 PHASE 1.5 - Project Understanding:
 - Write ${SANDBOX_OUTPUT_PATH}/project_understanding.json before discipline review.
@@ -331,6 +346,11 @@ OBJECTIVE:
 4. Cross-check each item against national, municipal, and procedural sources.
 5. Categorize each item with the Viseu taxonomy and required metadata.
 6. Generate clarification questions for the requerente / project team.
+
+MANIFEST AND TEXT INPUTS:
+- Reuse ${SANDBOX_OUTPUT_PATH}/sheet-manifest.json when present.
+- If only ${SANDBOX_FILES_PATH}/sheet-manifest.json exists, use it as a machine-generated hint, not as final ground truth; verify it against ${SANDBOX_FILES_PATH}/title-block-text.json plus page images/title blocks and write a corrected authoritative manifest to ${SANDBOX_OUTPUT_PATH}/sheet-manifest.json.
+- Use ${SANDBOX_FILES_PATH}/document-text.json to ground facts from supporting PDFs such as correction notices, PIP approvals, descriptive memoranda, advertisements, and other non-plan-binder documents.
 
 The server has already validated the mandatory Viseu corpus for this run.
 Use only official_verified municipal/PDMV/NIP sources for the mandatory Viseu topics.
