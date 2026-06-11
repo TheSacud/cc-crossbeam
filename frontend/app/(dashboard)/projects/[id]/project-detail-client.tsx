@@ -141,7 +141,7 @@ export function ProjectDetailClient({
       : 'corrections-analysis'
 
     try {
-      await fetch('/api/generate', {
+      const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -150,8 +150,27 @@ export function ProjectDetailClient({
           flow_type: flowType,
         }),
       })
-    } catch {
-      // Status polling will detect any transition
+      const data = await res.json().catch(() => ({}))
+      const nextStatus = data.status || data.current_status
+      if (res.ok && nextStatus) {
+        setProject(prev => ({ ...prev, status: nextStatus as ProjectStatus, error_message: null }))
+      } else if (res.status === 409 && PROCESSING_STATUSES.includes(nextStatus as ProjectStatus)) {
+        setProject(prev => ({ ...prev, status: nextStatus as ProjectStatus, error_message: null }))
+      } else if (!res.ok) {
+        setProject(prev => ({
+          ...prev,
+          status: 'failed',
+          error_message: data.error || 'Nao foi possivel iniciar a analise.',
+        }))
+      }
+    } catch (error) {
+      setProject(prev => ({
+        ...prev,
+        status: 'failed',
+        error_message: error instanceof Error ? error.message : 'Nao foi possivel iniciar a analise.',
+      }))
+    } finally {
+      setStarting(false)
     }
   }
 

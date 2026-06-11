@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type { Request } from 'express';
 import { z } from 'zod';
 import {
   updateProjectStatus,
@@ -7,6 +8,8 @@ import {
   getPhase1Outputs,
   getProject,
   insertMessage,
+  processingStatusForFlow,
+  tryStartProjectProcessing,
 } from '../services/supabase.js';
 import { runCrossBeamFlow } from '../services/sandbox.js';
 import { assertExtractionArtifactsReady, extractPdfForProject } from '../services/extract.js';
@@ -26,6 +29,25 @@ const generateRequestSchema = z.object({
   flow_type: z.enum(['city-review', 'corrections-analysis', 'corrections-response']),
 });
 
+function resolveCallbackBaseUrl(req: Request): string {
+  const configured = process.env.CROSSBEAM_CALLBACK_BASE_URL
+    || process.env.CLOUD_RUN_URL
+    || process.env.CROSSBEAM_SERVER_URL;
+  if (configured?.trim()) {
+    return configured.trim().replace(/\/+$/, '');
+  }
+
+  const host = (req.get('x-forwarded-host') || req.get('host'))?.split(',')[0]?.trim();
+  if (!host) {
+    throw new Error('Sandbox callback URL is not configured');
+  }
+
+  const proto = (req.get('x-forwarded-proto') || req.protocol || 'https')
+    .split(',')[0]
+    .trim();
+  return `${proto}://${host}`.replace(/\/+$/, '');
+}
+
 generateRouter.post('/', async (req, res) => {
   console.log('Generate request received:', req.body);
 
@@ -36,12 +58,36 @@ generateRouter.post('/', async (req, res) => {
   }
 
   const { project_id, user_id, flow_type } = parseResult.data;
+  const processingStatus = processingStatusForFlow(flow_type);
+  let callbackBaseUrl: string;
+  try {
+    callbackBaseUrl = resolveCallbackBaseUrl(req);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Sandbox callback URL is not configured';
+    return res.status(503).json({ error: message });
+  }
+
+  try {
+    const claim = await tryStartProjectProcessing(project_id, processingStatus);
+    if (!claim.started) {
+      if (!claim.currentStatus) {
+        return res.status(404).json({ error: 'Project not found' });
+      }
+      return res.status(409).json({
+        error: 'already_processing',
+        current_status: claim.currentStatus,
+      });
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Could not claim project processing status';
+    return res.status(500).json({ error: message });
+  }
 
   // Respond immediately - processing continues async
-  res.json({ status: 'processing', project_id });
+  res.json({ status: processingStatus, project_id });
 
   // Start async processing
-  processGeneration(project_id, user_id, flow_type).catch((error) => {
+  processGeneration(project_id, user_id, flow_type, callbackBaseUrl).catch((error) => {
     console.error('Generation failed:', error);
   });
 });
@@ -56,6 +102,7 @@ async function processGeneration(
   projectId: string,
   userId: string,
   flowType: InternalFlowType,
+  callbackBaseUrl: string,
 ) {
   const startTime = Date.now();
 
@@ -68,15 +115,6 @@ async function processGeneration(
     const address = project.project_address || undefined;
 
     validateMunicipalCorpusForFlow(city, flowType);
-
-    // Set initial processing status
-    if (flowType === 'corrections-analysis') {
-      await updateProjectStatus(projectId, 'processing-phase1');
-    } else if (flowType === 'corrections-response') {
-      await updateProjectStatus(projectId, 'processing-phase2');
-    } else {
-      await updateProjectStatus(projectId, 'processing');
-    }
 
     // Pre-extract PDF → PNGs/text before launching the sandbox.
     // For review/analysis this is a hard gate: the agent prompt assumes these artifacts exist.
@@ -115,12 +153,10 @@ async function processGeneration(
     // Required env vars
     const apiKey = process.env.ANTHROPIC_API_KEY;
     const supabaseUrl = process.env.SUPABASE_URL;
-    const sandboxSupabaseUrl = process.env.SUPABASE_PUBLIC_URL || supabaseUrl;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!apiKey) throw new Error('ANTHROPIC_API_KEY not configured');
     if (!supabaseUrl || !supabaseKey) throw new Error('Supabase not configured');
-    const sandboxSupabaseUrlResolved = sandboxSupabaseUrl as string;
 
     // Run the agent
     await runCrossBeamFlow({
@@ -129,8 +165,7 @@ async function processGeneration(
       city,
       address,
       apiKey,
-      supabaseUrl: sandboxSupabaseUrlResolved,
-      supabaseKey,
+      callbackBaseUrl,
       projectId,
       userId,
       contractorAnswersJson: applicantAnswersJson,

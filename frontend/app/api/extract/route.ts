@@ -61,7 +61,10 @@ export async function POST(request: NextRequest) {
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))
       return NextResponse.json(
-        { error: errorData.error || `Server error: ${response.status}` },
+        {
+          error: errorData.error || `Server error: ${response.status}`,
+          current_status: errorData.current_status,
+        },
         { status: response.status },
       )
     }

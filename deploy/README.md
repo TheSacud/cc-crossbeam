@@ -1,6 +1,6 @@
 # CrossBeam VPS Deploy
 
-This deploy layout exposes only the Next.js frontend publicly. The Express worker must stay bound to `127.0.0.1:3001`.
+This deploy layout exposes the Next.js frontend publicly and proxies only the authenticated `/sandbox-callback/` path to the Express worker. The rest of the worker must stay bound to `127.0.0.1:3001`.
 
 ## 1. Environment
 
@@ -12,7 +12,7 @@ cp deploy/env/frontend.env.example frontend/.env.local
 chmod 600 server/.env frontend/.env.local
 ```
 
-Use the same Supabase service-role key in both files. `CROSSBEAM_API_KEY` must be a long random secret.
+Use long random values for `CROSSBEAM_API_KEY`, `CROSSBEAM_WORKER_TOKEN`, and `CROSSBEAM_SANDBOX_CALLBACK_SECRET`. Supabase service-role keys are server-side only; never expose them through `NEXT_PUBLIC_*` variables or sandbox scripts.
 
 For public deploy, prefer hosted Supabase or a hardened self-hosted Supabase with unique production JWT/API secrets. The Supabase CLI local stack is useful for testing, but it uses development defaults and should not be exposed directly to the internet.
 

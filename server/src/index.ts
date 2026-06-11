@@ -2,12 +2,13 @@ import 'dotenv/config';
 import express from 'express';
 import { generateRouter } from './routes/generate.js';
 import { extractRouter } from './routes/extract.js';
+import { sandboxCallbackRouter } from './routes/sandbox-callback.js';
 import { requireInternalWorkerToken } from './middleware/internal-auth.js';
 
 const app = express();
 
 // Middleware
-app.use(express.json());
+app.use(express.json({ limit: process.env.CROSSBEAM_JSON_BODY_LIMIT || '25mb' }));
 
 // Health check
 app.get('/health', (req, res) => {
@@ -15,6 +16,7 @@ app.get('/health', (req, res) => {
 });
 
 // Routes
+app.use('/sandbox-callback', sandboxCallbackRouter);
 app.use('/generate', requireInternalWorkerToken, generateRouter);
 app.use('/extract', requireInternalWorkerToken, extractRouter);
 

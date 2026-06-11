@@ -536,14 +536,13 @@ function parseReferencedPages(text: string): number[] {
   return [...pages];
 }
 
-const ISSUE_SHEET_HINTS: Array<{ pattern: RegExp; pages?: number[]; desenhos?: number[]; summary: string }> = [
-  { pattern: /Typology mismatch|T3 .* T4|quartos|tipologia/i, desenhos: [5, 6], summary: 'Floor plans show the unit typology used to support this blocking issue.' },
-  { pattern: /Quadro sinoptico|quadro sinoptico|area|indice/i, desenhos: [19], summary: 'The synoptic sheet contains the contradictory area and index data supporting this blocking issue.' },
-  { pattern: /Exterior colour palette|palette|alcad/i, desenhos: [13, 14], summary: 'Elevations show the exterior palette referenced in this blocking issue.' },
-  { pattern: /specialty engineering projects absent|especialidades/i, pages: [1, 20], summary: 'The cover/index and end of the drawing set support the absence of specialty sheets in the submitted binder.' },
-  { pattern: /Core administrative documents missing|documentos administrativos/i, pages: [1], summary: 'The submitted binder content supports the dossier-level incompleteness referenced in this blocking issue.' },
-  { pattern: /Procedural sequencing violation|sequencia procedimental|loteamento/i, pages: [1], summary: 'This blocking issue is primarily documental; the binder itself does not show the required prior loteamento steps.' },
-];
+function parseReferencedDesenhos(text: string): number[] {
+  const desenhos = new Set<number>();
+  for (const match of text.matchAll(/\b(?:desenho|drawing|dwg)\s*0?(\d{1,3})\b/giu)) {
+    desenhos.add(Number(match[1]));
+  }
+  return [...desenhos];
+}
 
 export function normalizeSheetManifest(
   rawManifest: unknown,
@@ -1040,6 +1039,10 @@ function enrichBlockingIssue(
         const sheet = byPage.get(page);
         if (sheet) matched.set(page, buildSheetRef(sheet));
       }
+      for (const desenhoRef of parseReferencedDesenhos(text)) {
+        const sheet = byDesenho.get(desenhoRef);
+        if (sheet) matched.set(sheet.page, buildSheetRef(sheet));
+      }
     }
 
     const desenho = parseMaybeNumber(finding.desenho);
@@ -1050,25 +1053,6 @@ function enrichBlockingIssue(
   }
 
   let visualNoteSummary = issue.visual_note_summary;
-  if (matched.size === 0) {
-    const hint = ISSUE_SHEET_HINTS.find((candidate) => candidate.pattern.test(issue.title));
-    if (hint?.desenhos) {
-      for (const desenho of hint.desenhos) {
-        const sheet = byDesenho.get(desenho);
-        if (sheet) matched.set(sheet.page, buildSheetRef(sheet, hint.summary));
-      }
-    }
-    if (hint?.pages) {
-      for (const page of hint.pages) {
-        const sheet = byPage.get(page);
-        if (sheet) matched.set(sheet.page, buildSheetRef(sheet, hint.summary));
-      }
-    }
-    if (hint?.summary) {
-      visualNoteSummary = hint.summary;
-    }
-  }
-
   const sheetRefs = [...matched.values()].sort((a, b) => a.page - b.page).slice(0, 3);
   if (sheetRefs.length === 0) {
     visualNoteSummary = visualNoteSummary || 'No direct visual sheet reference was resolved for this blocking issue; review remains primarily documental/procedural.';

@@ -58,15 +58,22 @@ export function ApplicantQuestionsForm({ projectId, userId }: ApplicantQuestions
     }
 
     // Trigger Phase 2
-    await fetch('/api/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        project_id: projectId,
-        user_id: userId,
-        flow_type: 'corrections-response',
-      }),
-    })
+    try {
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: projectId,
+          user_id: userId,
+          flow_type: 'corrections-response',
+        }),
+      })
+      if (!response.ok && response.status !== 409) {
+        setSubmitting(false)
+      }
+    } catch {
+      setSubmitting(false)
+    }
     // Polling will detect status change
   }
 

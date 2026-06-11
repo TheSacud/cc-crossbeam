@@ -127,10 +127,10 @@ test('Viseu correction fixture runs analysis and response artifact pipeline end-
   assert.equal(analysisOutput.corrections_analysis_json.length, 5);
   assert.equal(analysisOutput.applicant_questions_json?.question_groups.length, 3);
   assert.equal(analysisOutput.applicant_questions_json?.question_groups[0].questions[0].related_finding_ids[0], 'VC1-1');
-  assert.equal(analysisOutput.applicant_questions_json?.question_groups[0].questions[0].determination_status, 'needs_official_source');
+  assert.equal(analysisOutput.applicant_questions_json?.question_groups[0].questions[0].determination_status, 'inconclusive');
   assert.equal(analysisOutput.raw_artifacts['validation_report.json'].summary.total_findings, 5);
   assert.ok(analysisOutput.raw_artifacts['validation_report.json'].summary.source_needed_findings >= 1);
-  assert.equal(analysisOutput.raw_artifacts['validation_report.json'].summary.depends_on_pdmv_findings, 1);
+  assert.equal(analysisOutput.raw_artifacts['validation_report.json'].summary.depends_on_pdmv_findings, 0);
 
   const responseRawFiles = {
     ...analysisRawFiles,

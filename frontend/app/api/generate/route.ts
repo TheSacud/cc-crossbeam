@@ -85,6 +85,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
           success: false,
           error: errorData.error || `Server error: ${response.status}`,
+          current_status: errorData.current_status,
         }, { status: response.status })
       }
 
@@ -92,6 +93,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         message: data.message || 'Generation started',
+        status: data.status,
+        project_id: data.project_id,
       })
     } catch (fetchError) {
       if (fetchError instanceof Error && fetchError.name === 'AbortError') {

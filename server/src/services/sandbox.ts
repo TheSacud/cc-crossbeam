@@ -15,7 +15,8 @@ import {
   getSystemAppend,
   type InternalFlowType,
 } from '../utils/config.js';
-import { insertMessage } from './supabase.js';
+import { createStorageSignedUrl, insertMessage } from './supabase.js';
+import { createSandboxCallbackToken } from './sandbox-callback-auth.js';
 import {
   buildCanonicalViseuReviewArtifactsForSandbox,
   buildViseuAnalysisArtifactsForSandbox,
@@ -38,11 +39,15 @@ interface ProjectFile {
   file_type: string;
 }
 
-interface FileToDownload {
+interface StorageFileToDownload {
   bucket: string;
   storagePath: string;
   targetFilename: string;
   required: boolean;
+}
+
+interface FileToDownload extends StorageFileToDownload {
+  signedUrl: string;
 }
 
 interface RunFlowOptions {
@@ -51,8 +56,7 @@ interface RunFlowOptions {
   city: string;
   address?: string;
   apiKey: string;
-  supabaseUrl: string;
-  supabaseKey: string;
+  callbackBaseUrl: string;
   projectId: string;
   userId: string;
   contractorAnswersJson?: string;
@@ -556,7 +560,7 @@ function buildSheetRef(sheet: SheetManifestSheet): SheetRef | null {
   };
 }
 
-function inferBlockingIssueSheetRefs(allFiles: Record<string, unknown>): void {
+export function inferBlockingIssueSheetRefs(allFiles: Record<string, unknown>): void {
   const manifest = allFiles['sheet-manifest.json'] as { sheets?: SheetManifestSheet[]; project?: Record<string, unknown> } | undefined;
   const draft = allFiles['draft_corrections.json'] as { blocking_issues?: BlockingIssue[] } | undefined;
   if (!manifest || !Array.isArray(manifest.sheets) || !draft || !Array.isArray(draft.blocking_issues)) {
@@ -592,15 +596,6 @@ function inferBlockingIssueSheetRefs(allFiles: Record<string, unknown>): void {
     }
   }
 
-  const issueSheetHints: Array<{ pattern: RegExp; pages?: number[]; desenhos?: number[]; summary: string }> = [
-    { pattern: /Typology mismatch|T3 .* T4/i, desenhos: [5, 6], summary: 'Floor plans show the unit typology used to support this blocking issue.' },
-    { pattern: /Quadro sinoptico/i, desenhos: [19], summary: 'The synoptic sheet contains the contradictory area and index data supporting this blocking issue.' },
-    { pattern: /Exterior colour palette/i, desenhos: [13, 14], summary: 'Elevations show the exterior palette referenced in this blocking issue.' },
-    { pattern: /specialty engineering projects absent/i, pages: [1, 20], summary: 'The cover/index and end of the drawing set support the absence of specialty sheets in the submitted binder.' },
-    { pattern: /Core administrative documents missing/i, pages: [1], summary: 'The submitted binder content supports the dossier-level incompleteness referenced in this blocking issue.' },
-    { pattern: /Procedural sequencing violation/i, pages: [1], summary: 'This blocking issue is primarily documental; the binder itself does not show the required prior loteamento steps.' },
-  ];
-
   for (const issue of draft.blocking_issues) {
     const sourceFindings = Array.isArray(issue.source_findings) ? issue.source_findings as unknown[] : [];
     const matchedSheets = new Map<number, SheetRef>();
@@ -624,6 +619,13 @@ function inferBlockingIssueSheetRefs(allFiles: Record<string, unknown>): void {
       for (const match of description.matchAll(/\b(?:sheet|page|pagina|página)\s*(\d{1,2})\b/gi)) {
         candidatePages.add(Number(match[1]));
       }
+      const candidateDesenhos = new Set<number>();
+      for (const match of sourceReference.matchAll(/\b(?:desenho|drawing|dwg)\s*(\d{1,3})\b/gi)) {
+        candidateDesenhos.add(Number(match[1]));
+      }
+      for (const match of description.matchAll(/\b(?:desenho|drawing|dwg)\s*(\d{1,3})\b/gi)) {
+        candidateDesenhos.add(Number(match[1]));
+      }
 
       for (const page of candidatePages) {
         const sheet = sheetByPage.get(page);
@@ -632,33 +634,13 @@ function inferBlockingIssueSheetRefs(allFiles: Record<string, unknown>): void {
           matchedSheets.set(ref.page, ref);
         }
       }
-    }
 
-    if (matchedSheets.size === 0) {
-      const title = typeof issue.title === 'string' ? issue.title : '';
-      const hint = issueSheetHints.find((candidate) => candidate.pattern.test(title));
-      if (hint?.desenhos) {
-        for (const desenho of hint.desenhos) {
-          const sheet = sheetByDesenho.get(desenho);
-          const ref = sheet ? buildSheetRef(sheet) : null;
-          if (ref) {
-            ref.visual_note = hint.summary;
-            matchedSheets.set(ref.page, ref);
-          }
+      for (const desenho of candidateDesenhos) {
+        const sheet = sheetByDesenho.get(desenho);
+        const ref = sheet ? buildSheetRef(sheet) : null;
+        if (ref) {
+          matchedSheets.set(ref.page, ref);
         }
-      }
-      if (hint?.pages) {
-        for (const page of hint.pages) {
-          const sheet = sheetByPage.get(page);
-          const ref = sheet ? buildSheetRef(sheet) : null;
-          if (ref) {
-            ref.visual_note = hint.summary;
-            matchedSheets.set(ref.page, ref);
-          }
-        }
-      }
-      if (hint) {
-        issue.visual_note_summary = hint.summary;
       }
     }
 
@@ -764,10 +746,10 @@ async function installDependencies(sandbox: Sandbox, projectId?: string): Promis
     throw new Error('Failed to install Claude Code CLI');
   }
 
-  console.log('Installing Claude Agent SDK, Supabase, and image helpers...');
+  console.log('Installing Claude Agent SDK and image helpers...');
   const sdkResult = await sandbox.runCommand({
     cmd: 'npm',
-    args: ['install', '@anthropic-ai/claude-agent-sdk', '@supabase/supabase-js', 'jimp'],
+    args: ['install', '@anthropic-ai/claude-agent-sdk', 'jimp'],
   });
   if (sdkResult.exitCode !== 0) {
     throw new Error('Failed to install Agent SDK');
@@ -776,7 +758,7 @@ async function installDependencies(sandbox: Sandbox, projectId?: string): Promis
 
 // --- File Handling ---
 
-function buildDownloadManifest(files: ProjectFile[]): FileToDownload[] {
+function buildDownloadManifest(files: ProjectFile[]): StorageFileToDownload[] {
   return files.map((f) => {
     // Determine the bucket based on storage_path prefix
     let bucket: string;
@@ -803,40 +785,35 @@ function buildDownloadManifest(files: ProjectFile[]): FileToDownload[] {
   });
 }
 
+async function buildSignedDownloadManifest(files: ProjectFile[]): Promise<FileToDownload[]> {
+  const expiresInSeconds = Math.ceil(CONFIG.SANDBOX_TIMEOUT / 1000) + 15 * 60;
+  const manifest = buildDownloadManifest(files);
+  return Promise.all(manifest.map(async (file) => ({
+    ...file,
+    signedUrl: await createStorageSignedUrl(file.bucket, file.storagePath, expiresInSeconds),
+  })));
+}
+
 async function downloadFilesInSandbox(
   sandbox: Sandbox,
   files: ProjectFile[],
-  supabaseUrl: string,
-  supabaseKey: string,
 ): Promise<void> {
-  const filesToDownload = buildDownloadManifest(files);
+  const filesToDownload = await buildSignedDownloadManifest(files);
   console.log(`Setting up download of ${filesToDownload.length} files...`);
 
   const downloadScript = `
 import fs from 'fs';
 import path from 'path';
 
-const supabaseUrl = ${JSON.stringify(supabaseUrl.replace(/\/+$/, ''))};
-const supabaseKey = ${JSON.stringify(supabaseKey)};
 const files = ${JSON.stringify(filesToDownload)};
 const basePath = '${SANDBOX_FILES_PATH}';
 
-function encodeStoragePath(storagePath) {
-  return storagePath.split('/').map(encodeURIComponent).join('/');
-}
-
 async function downloadStorageObject(file) {
-  const url = supabaseUrl + '/storage/v1/object/' + encodeURIComponent(file.bucket) + '/' + encodeStoragePath(file.storagePath);
   let lastError = null;
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const res = await fetch(url, {
-        headers: {
-          apikey: supabaseKey,
-          authorization: 'Bearer ' + supabaseKey,
-        },
-      });
+      const res = await fetch(file.signedUrl);
 
       if (!res.ok) {
         const body = await res.text().catch(() => '');
@@ -1125,8 +1102,7 @@ async function runAgent(
     apiKey: string;
     projectId: string;
     userId: string;
-    supabaseUrl: string;
-    supabaseKey: string;
+    callbackBaseUrl: string;
     flowType: InternalFlowType;
     city: string;
     address?: string;
@@ -1135,7 +1111,7 @@ async function runAgent(
   },
 ): Promise<{ exitCode: number }> {
   const {
-    apiKey, projectId, userId, supabaseUrl, supabaseKey,
+    apiKey, projectId, userId, callbackBaseUrl,
     flowType, city, address, contractorAnswersJson, preExtracted,
   } = options;
 
@@ -1148,44 +1124,56 @@ async function runAgent(
   const flowPhase = flowType === 'city-review' ? 'review'
     : flowType === 'corrections-analysis' ? 'analysis'
     : 'response';
+  const callbackToken = createSandboxCallbackToken(
+    { projectId, userId, flowPhase },
+    CONFIG.SANDBOX_TIMEOUT + 10 * 60 * 1000,
+  );
+  const callbackUrl = callbackBaseUrl.replace(/\/+$/, '');
 
   const agentScript = `
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import { createClient } from '@supabase/supabase-js';
 import fs from 'fs';
 import path from 'path';
 
-const supabase = createClient('${supabaseUrl}', '${supabaseKey}');
-const projectId = '${projectId}';
-const userId = '${userId}';
 const FILES_PATH = '${SANDBOX_FILES_PATH}';
 const OUTPUT_PATH = '${SANDBOX_OUTPUT_PATH}';
+const callbackBaseUrl = ${JSON.stringify(callbackUrl)};
+const callbackToken = ${JSON.stringify(callbackToken)};
+
+async function callOrchestrator(action, body) {
+  const res = await fetch(callbackBaseUrl + '/sandbox-callback/' + action, {
+    method: 'POST',
+    headers: {
+      authorization: 'Bearer ' + callbackToken,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error('orchestrator callback ' + action + ' failed: HTTP ' + res.status + (text ? ': ' + text.slice(0, 300) : ''));
+  }
+  return res.json().catch(() => ({}));
+}
 
 // Fire-and-forget message logging
 function logMessage(role, content) {
-  supabase
-    .schema('crossbeam')
-    .from('messages')
-    .insert({ project_id: projectId, role, content })
-    .then(() => {})
+  callOrchestrator('message', { role, content })
     .catch(err => console.error('Failed to log message:', err.message));
 }
 
-// Upload file to Supabase Storage
+// Upload file through the orchestrator; the sandbox never receives Supabase credentials.
 async function uploadFile(filename, content) {
-  const storagePath = userId + '/' + projectId + '/' + filename;
   const ext = filename.split('.').pop().toLowerCase();
   const mimeTypes = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', json: 'application/json' };
   const contentType = mimeTypes[ext] || 'application/octet-stream';
-  const { error } = await supabase.storage
-    .from('crossbeam-outputs')
-    .upload(storagePath, content, { upsert: true, contentType });
-  if (error) {
-    console.error('Upload error for', filename, ':', error.message);
-    throw error;
-  }
-  console.log('Uploaded:', storagePath);
-  return storagePath;
+  const result = await callOrchestrator('upload', {
+    filename,
+    contentType,
+    contentBase64: Buffer.from(content).toString('base64'),
+  });
+  console.log('Uploaded:', result.storagePath);
+  return result.storagePath;
 }
 
 // Read all output files from the output directory (text only — skip binary)
@@ -1329,34 +1317,9 @@ async function ensureProjectUnderstanding(flowPhase) {
 
 // Create output record with auto-incrementing version
 async function createOutputRecord(data) {
-  // Get max version for this project+flow_phase
-  const { data: existing } = await supabase
-    .schema('crossbeam')
-    .from('outputs')
-    .select('version')
-    .eq('project_id', projectId)
-    .eq('flow_phase', '${flowPhase}')
-    .order('version', { ascending: false })
-    .limit(1);
-  const nextVersion = (existing?.[0]?.version || 0) + 1;
-
-  const { data: inserted, error } = await supabase
-    .schema('crossbeam')
-    .from('outputs')
-    .insert({
-      project_id: projectId,
-      flow_phase: '${flowPhase}',
-      version: nextVersion,
-      ...data,
-    })
-    .select('id')
-    .single();
-  if (error) {
-    console.error('Failed to create output record:', error.message);
-    throw error;
-  }
-  console.log('Output record created (version ' + nextVersion + ', id: ' + inserted.id + ')');
-  return inserted.id;
+  const result = await callOrchestrator('output', { data });
+  console.log('Output record created (id: ' + result.outputId + ')');
+  return result.outputId;
 }
 
 // Insert applicant questions into applicant_answers table
@@ -1366,54 +1329,13 @@ async function insertApplicantQuestions(questions, outputId = null) {
     return;
   }
 
-  // Clear old unanswered questions before inserting new ones
-  const { error: deleteError } = await supabase
-    .schema('crossbeam')
-    .from('applicant_answers')
-    .delete()
-    .eq('project_id', projectId)
-    .eq('is_answered', false);
-  if (deleteError) {
-    console.error('Failed to delete old unanswered questions:', deleteError.message);
-  }
-
-  const rows = questions.map(q => ({
-    project_id: projectId,
-    question_key: q.question_id || q.key || q.question_key || q.id || 'q_' + Math.random().toString(36).slice(2),
-    question_text: q.context || q.question || q.question_text || q.text || '',
-    question_type: q.options ? 'select' : (q.type || 'text'),
-    options: q.options ? (typeof q.options === 'string' ? q.options : JSON.stringify(q.options)) : null,
-    context: q.context || q.why || null,
-    correction_item_id: q.correction_item_id || q.item_id || null,
-    is_answered: false,
-    output_id: outputId,
-  }));
-
-  const { error } = await supabase
-    .schema('crossbeam')
-    .from('applicant_answers')
-    .insert(rows);
-
-  if (error) {
-    console.error('Failed to insert applicant questions:', error.message);
-    throw error;
-  }
-  console.log('Inserted', rows.length, 'applicant questions');
+  await callOrchestrator('applicant-questions', { questions, outputId });
+  console.log('Inserted', questions.length, 'applicant questions');
 }
 
 // Update project status
 async function updateProjectStatus(status, errorMessage = null) {
-  const updateData = { status, updated_at: new Date().toISOString() };
-  if (errorMessage) updateData.error_message = errorMessage;
-  const { error } = await supabase
-    .schema('crossbeam')
-    .from('projects')
-    .update(updateData)
-    .eq('id', projectId);
-  if (error) {
-    console.error('Failed to update project status:', error.message);
-    throw error;
-  }
+  await callOrchestrator('status', { status, errorMessage });
   console.log('Project status updated to:', status);
 }
 
@@ -1601,8 +1523,6 @@ export async function runCrossBeamFlow(options: RunFlowOptions): Promise<void> {
     await downloadFilesInSandbox(
       sandbox,
       options.files,
-      options.supabaseUrl,
-      options.supabaseKey,
     );
     await insertMessage(options.projectId, 'system', `[SANDBOX 3/7] Downloaded ${options.files.length} files`);
 
@@ -1654,8 +1574,7 @@ export async function runCrossBeamFlow(options: RunFlowOptions): Promise<void> {
       apiKey: options.apiKey,
       projectId: options.projectId,
       userId: options.userId,
-      supabaseUrl: options.supabaseUrl,
-      supabaseKey: options.supabaseKey,
+      callbackBaseUrl: options.callbackBaseUrl,
       flowType: options.flowType,
       city: options.city,
       address: options.address,
