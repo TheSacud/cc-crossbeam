@@ -116,6 +116,30 @@ function linkedItemFromRecord(value: Json): EvidenceLinkedItem | null {
   }
 }
 
+// raw_artifacts on newer outputs is a pointer to a JSON payload in Supabase
+// Storage instead of the inline record (see server createOutputRecord).
+function rawArtifactsPointer(value: Json | null | undefined): { bucket: string; path: string } | null {
+  const record = asRecord(value)
+  if (!record || record.storage_pointer !== true) return null
+  const bucket = asString(record.bucket)
+  const path = asString(record.path)
+  return bucket && path ? { bucket, path } : null
+}
+
+async function resolveRawArtifacts(projectId: string, pointer: { bucket: string; path: string }): Promise<Json | null> {
+  const res = await fetch('/api/storage/signed-url', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project_id: projectId, bucket: pointer.bucket, path: pointer.path }),
+  })
+  if (!res.ok) return null
+  const data = await res.json()
+  if (typeof data.signedUrl !== 'string') return null
+  const payload = await fetch(data.signedUrl)
+  if (!payload.ok) return null
+  return await payload.json() as Json
+}
+
 function collectEvidence(output: Output | null): { evidence: EvidenceEntry[]; linkedItems: EvidenceLinkedItem[] } {
   if (!output) return { evidence: [], linkedItems: [] }
 
@@ -272,21 +296,35 @@ export function ResultsViewer({ projectId, flowType, pinnedOutputId }: ResultsVi
   const supabase = useMemo(() => createClient(), [])
 
   useEffect(() => {
+    let cancelled = false
     const query = pinnedOutputId
       ? supabase.schema('crossbeam').from('outputs').select('*').eq('id', pinnedOutputId).single()
       : supabase.schema('crossbeam').from('outputs').select('*').eq('project_id', projectId).order('created_at', { ascending: false }).limit(1).single()
 
-    query.then(({ data }) => {
+    query.then(async ({ data }) => {
       if (data) {
-        setOutput(data as Output)
+        let next = data as Output
+        // Only fetch the offloaded payload when the structured columns don't
+        // already provide the evidence index — it can be several MB.
+        const pointer = rawArtifactsPointer(next.raw_artifacts)
+        if (pointer && collectEvidence(next).evidence.length === 0) {
+          const resolved = await resolveRawArtifacts(projectId, pointer).catch(() => null)
+          if (resolved) next = { ...next, raw_artifacts: resolved }
+        }
+        if (cancelled) return
+        setOutput(next)
         if (flowType === 'city-review') {
           setActiveTab('corrections_letter_md')
         } else {
           setActiveTab('response_letter_md')
         }
       }
-      setLoading(false)
+      if (!cancelled) setLoading(false)
     })
+
+    return () => {
+      cancelled = true
+    }
   }, [projectId, flowType, supabase, pinnedOutputId])
 
   if (loading) {

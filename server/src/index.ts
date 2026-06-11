@@ -2,7 +2,11 @@ import 'dotenv/config';
 import express from 'express';
 import { generateRouter } from './routes/generate.js';
 import { extractRouter } from './routes/extract.js';
-import { maintenanceRouter, staleRunTimeoutMsFromEnv } from './routes/maintenance.js';
+import {
+  maintenanceRouter,
+  staleRunReconcileIntervalMsFromEnv,
+  staleRunTimeoutMsFromEnv,
+} from './routes/maintenance.js';
 import { sandboxCallbackRouter } from './routes/sandbox-callback.js';
 import { requireInternalWorkerToken } from './middleware/internal-auth.js';
 import { failStaleProcessingProjects } from './services/supabase.js';
@@ -45,4 +49,22 @@ app.listen(Number(PORT), HOST, () => {
     .catch((error) => {
       console.warn('Startup stale run reconciliation skipped:', error);
     });
+
+  // Heartbeats stop when an instance dies; a periodic sweep catches runs the
+  // startup pass misses (e.g. instances that stay up across a stuck run).
+  const reconcileIntervalMs = staleRunReconcileIntervalMsFromEnv();
+  if (reconcileIntervalMs > 0) {
+    const timer = setInterval(() => {
+      failStaleProcessingProjects(staleRunTimeoutMsFromEnv())
+        .then((projects) => {
+          if (projects.length > 0) {
+            console.log(`Reconciled ${projects.length} stale processing projects`);
+          }
+        })
+        .catch((error) => {
+          console.warn('Periodic stale run reconciliation skipped:', error);
+        });
+    }, reconcileIntervalMs);
+    timer.unref?.();
+  }
 });

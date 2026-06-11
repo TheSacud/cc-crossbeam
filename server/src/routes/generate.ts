@@ -8,6 +8,7 @@ import {
   getPhase1Outputs,
   getProject,
   insertMessage,
+  loadRawArtifacts,
   processingStatusForFlow,
   startProjectProcessingHeartbeat,
   tryStartProjectProcessing,
@@ -36,6 +37,12 @@ function resolveCallbackBaseUrl(req: Request): string {
     || process.env.CROSSBEAM_SERVER_URL;
   if (configured?.trim()) {
     return configured.trim().replace(/\/+$/, '');
+  }
+
+  // Request headers are caller-controlled; never derive the callback target
+  // from them in production. Set CROSSBEAM_CALLBACK_BASE_URL explicitly.
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('CROSSBEAM_CALLBACK_BASE_URL must be configured in production');
   }
 
   const host = (req.get('x-forwarded-host') || req.get('host'))?.split(',')[0]?.trim();
@@ -153,7 +160,7 @@ async function processGeneration(
       const answers = await getApplicantAnswers(projectId);
       applicantAnswersJson = JSON.stringify(answers, null, 2);
       const phase1 = await getPhase1Outputs(projectId);
-      phase1Artifacts = phase1?.raw_artifacts as Record<string, unknown> | undefined;
+      phase1Artifacts = await loadRawArtifacts(phase1) ?? undefined;
     }
 
     // Required env vars

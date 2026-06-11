@@ -333,10 +333,91 @@ export async function failStaleProcessingProjects(
   return (data || []) as Array<{ id: string; status: ProjectStatus; processing_run_id: string | null }>;
 }
 
+// --- Raw artifacts offloading ---
+// raw_artifacts payloads (full agent output, including page text for every
+// document) reach several MB per row, which pressures Postgres and Realtime.
+// New rows store the payload in the crossbeam-outputs bucket and keep only a
+// pointer in the row; old rows still carry the record inline.
+
+export const RAW_ARTIFACTS_BUCKET = 'crossbeam-outputs';
+
+export interface RawArtifactsPointer {
+  storage_pointer: true;
+  bucket: string;
+  path: string;
+  size_bytes: number;
+  sha256: string;
+}
+
+export function isRawArtifactsPointer(value: unknown): value is RawArtifactsPointer {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return record.storage_pointer === true
+    && typeof record.bucket === 'string'
+    && typeof record.path === 'string';
+}
+
+export function rawArtifactsStoragePath(
+  userId: string,
+  projectId: string,
+  version: number,
+): string {
+  return `${userId}/${projectId}/raw-artifacts-v${version}.json`;
+}
+
+export async function offloadRawArtifacts(
+  userId: string,
+  projectId: string,
+  version: number,
+  rawArtifacts: Record<string, unknown>,
+): Promise<RawArtifactsPointer> {
+  const body = Buffer.from(JSON.stringify(rawArtifacts), 'utf8');
+  const storagePath = rawArtifactsStoragePath(userId, projectId, version);
+
+  const { error } = await supabase.storage
+    .from(RAW_ARTIFACTS_BUCKET)
+    .upload(storagePath, body, { upsert: true, contentType: 'application/json' });
+
+  if (error) {
+    console.error('Failed to upload raw artifacts payload:', error);
+    throw error;
+  }
+
+  return {
+    storage_pointer: true,
+    bucket: RAW_ARTIFACTS_BUCKET,
+    path: storagePath,
+    size_bytes: body.byteLength,
+    sha256: crypto.createHash('sha256').update(body).digest('hex'),
+  };
+}
+
+// Returns the raw artifacts record for an output row whether the payload is
+// stored inline (legacy rows) or offloaded to Storage (pointer rows).
+export async function loadRawArtifacts(
+  output: Record<string, unknown> | null | undefined,
+): Promise<Record<string, unknown> | null> {
+  const raw = output?.raw_artifacts;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  if (!isRawArtifactsPointer(raw)) return raw as Record<string, unknown>;
+
+  const { data, error } = await supabase.storage.from(raw.bucket).download(raw.path);
+  if (error || !data) {
+    console.error('Failed to download raw artifacts payload:', error);
+    throw error || new Error('No raw artifacts payload returned from storage');
+  }
+
+  const parsed = JSON.parse(Buffer.from(await data.arrayBuffer()).toString('utf8')) as unknown;
+  return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+    ? parsed as Record<string, unknown>
+    : null;
+}
+
 export async function createOutputRecord(
   projectId: string,
   flowPhase: OutputFlowPhase,
   data: Record<string, unknown>,
+  userId?: string,
 ): Promise<string> {
   const { data: existing, error: existingError } = await supabase
     .schema('crossbeam')
@@ -353,11 +434,31 @@ export async function createOutputRecord(
   }
 
   const nextVersion = (existing?.[0]?.version || 0) + 1;
+
+  const row = { ...data };
+  const rawArtifacts = row.raw_artifacts;
+  if (
+    userId
+    && rawArtifacts && typeof rawArtifacts === 'object' && !Array.isArray(rawArtifacts)
+    && !isRawArtifactsPointer(rawArtifacts)
+  ) {
+    try {
+      row.raw_artifacts = await offloadRawArtifacts(
+        userId,
+        projectId,
+        nextVersion,
+        rawArtifacts as Record<string, unknown>,
+      );
+    } catch (offloadError) {
+      console.warn('Raw artifacts offload failed; storing payload inline:', offloadError);
+    }
+  }
+
   const { data: inserted, error } = await supabase
     .schema('crossbeam')
     .from('outputs')
     .insert({
-      ...data,
+      ...row,
       project_id: projectId,
       flow_phase: flowPhase,
       version: nextVersion,

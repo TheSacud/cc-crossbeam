@@ -17,6 +17,16 @@ export function staleRunTimeoutMsFromEnv(): number {
   return minutes * 60 * 1000;
 }
 
+// 0 disables the periodic sweep; minimum 1 minute otherwise.
+export function staleRunReconcileIntervalMsFromEnv(): number {
+  const raw = process.env.CROSSBEAM_STALE_RUN_RECONCILE_INTERVAL_MINUTES;
+  const minutes = raw ? Number(raw) : 10;
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    return 0;
+  }
+  return Math.max(minutes, 1) * 60 * 1000;
+}
+
 maintenanceRouter.post('/reconcile-stale-runs', async (req, res, next) => {
   try {
     const parseResult = reconcileRequestSchema.safeParse(req.body || {});

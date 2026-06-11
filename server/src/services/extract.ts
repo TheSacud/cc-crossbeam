@@ -25,6 +25,9 @@ const TITLE_BLOCK_VISION_MAX_DIMENSION = 1568;
 const DEFAULT_TITLE_BLOCK_VISION_MODEL = 'claude-haiku-4-5-20251001';
 const DEFAULT_TITLE_BLOCK_VISION_MAX_PAGES = 60;
 const DEFAULT_TITLE_BLOCK_VISION_TIMEOUT_MS = 20_000;
+const DEFAULT_TITLE_BLOCK_VISION_CONCURRENCY = 4;
+const MAX_TITLE_BLOCK_VISION_CONCURRENCY = 8;
+const DEFAULT_TITLE_BLOCK_VISION_MAX_RETRIES = 2;
 const TITLE_BLOCK_CROP_IDS = ['bottom', 'right', 'bottom-right'] as const;
 const TITLE_BLOCK_SELECTED_CROP_IDS = ['bottom', 'right', 'bottom-right', 'none'] as const;
 
@@ -144,6 +147,8 @@ interface TitleBlockVisionSettings {
   model: string;
   maxPages: number;
   timeoutMs: number;
+  concurrency: number;
+  maxRetries: number;
 }
 
 interface TitleBlockVisionArtifact {
@@ -256,14 +261,22 @@ function titleBlockVisionSettingsFromEnv(): TitleBlockVisionSettings {
     'CROSSBEAM_TITLE_BLOCK_VISION_TIMEOUT_MS',
     DEFAULT_TITLE_BLOCK_VISION_TIMEOUT_MS,
   );
+  const concurrency = Math.min(
+    positiveIntegerFromEnv('CROSSBEAM_TITLE_BLOCK_VISION_CONCURRENCY', DEFAULT_TITLE_BLOCK_VISION_CONCURRENCY),
+    MAX_TITLE_BLOCK_VISION_CONCURRENCY,
+  );
+  const maxRetries = positiveIntegerFromEnv(
+    'CROSSBEAM_TITLE_BLOCK_VISION_MAX_RETRIES',
+    DEFAULT_TITLE_BLOCK_VISION_MAX_RETRIES,
+  );
 
   if (mode === 'disabled') {
-    return { enabled: false, reason: 'disabled by CROSSBEAM_TITLE_BLOCK_VISION', apiKey: null, model, maxPages, timeoutMs };
+    return { enabled: false, reason: 'disabled by CROSSBEAM_TITLE_BLOCK_VISION', apiKey: null, model, maxPages, timeoutMs, concurrency, maxRetries };
   }
   if (!apiKey) {
-    return { enabled: false, reason: 'ANTHROPIC_API_KEY not configured', apiKey: null, model, maxPages, timeoutMs };
+    return { enabled: false, reason: 'ANTHROPIC_API_KEY not configured', apiKey: null, model, maxPages, timeoutMs, concurrency, maxRetries };
   }
-  return { enabled: true, reason: null, apiKey, model, maxPages, timeoutMs };
+  return { enabled: true, reason: null, apiKey, model, maxPages, timeoutMs, concurrency, maxRetries };
 }
 
 function formatBytes(bytes: number): string {
@@ -1308,7 +1321,48 @@ function anthropicTitleBlockToolSchema(): Record<string, unknown> {
   };
 }
 
+class VisionRequestError extends Error {
+  constructor(message: string, readonly retryable: boolean) {
+    super(message);
+    this.name = 'VisionRequestError';
+  }
+}
+
+function isRetryableVisionError(error: unknown): boolean {
+  if (error instanceof VisionRequestError) {
+    return error.retryable;
+  }
+  // AbortError = request timeout; TypeError = undici network failure.
+  return error instanceof Error && (error.name === 'AbortError' || error.name === 'TypeError');
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function analyzeTitleBlockPageWithVision(
+  page: number,
+  candidates: TitleBlockCropCandidate[],
+  settings: TitleBlockVisionSettings,
+): Promise<VisionSheetMetadata> {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt <= settings.maxRetries; attempt++) {
+    if (attempt > 0) {
+      await sleep(1000 * 2 ** (attempt - 1));
+    }
+    try {
+      return await analyzeTitleBlockPageWithVisionOnce(page, candidates, settings);
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableVisionError(error)) {
+        throw error;
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('Title-block vision request failed');
+}
+
+async function analyzeTitleBlockPageWithVisionOnce(
   page: number,
   candidates: TitleBlockCropCandidate[],
   settings: TitleBlockVisionSettings,
@@ -1383,7 +1437,10 @@ async function analyzeTitleBlockPageWithVision(
 
     const responseText = await response.text();
     if (!response.ok) {
-      throw new Error(`Anthropic vision request failed (${response.status}): ${responseText.slice(0, 500)}`);
+      throw new VisionRequestError(
+        `Anthropic vision request failed (${response.status}): ${responseText.slice(0, 500)}`,
+        response.status === 429 || response.status >= 500,
+      );
     }
 
     const payload = JSON.parse(responseText) as {
@@ -1426,22 +1483,39 @@ async function extractTitleBlockVisionMetadata(
   const errors: Array<{ page: number; message: string }> = [];
   const pagesToAnalyze = Math.min(pageCount, settings.maxPages);
 
-  for (let page = 1; page <= pagesToAnalyze; page++) {
-    const candidates = collectVisionCandidatesForPage(candidateDir, page);
-    if (candidates.length === 0) {
-      errors.push({ page, message: 'No title block crop candidates found' });
-      continue;
-    }
+  const pages = Array.from({ length: pagesToAnalyze }, (_, index) => index + 1);
+  let nextPageIndex = 0;
 
-    try {
-      results.push(await analyzeTitleBlockPageWithVision(page, candidates, settings));
-    } catch (error) {
-      errors.push({
-        page,
-        message: error instanceof Error ? error.message : 'Unknown title-block vision error',
-      });
+  async function visionWorker(): Promise<void> {
+    while (true) {
+      const pageIndex = nextPageIndex++;
+      if (pageIndex >= pages.length) {
+        return;
+      }
+      const page = pages[pageIndex];
+
+      const candidates = collectVisionCandidatesForPage(candidateDir, page);
+      if (candidates.length === 0) {
+        errors.push({ page, message: 'No title block crop candidates found' });
+        continue;
+      }
+
+      try {
+        results.push(await analyzeTitleBlockPageWithVision(page, candidates, settings));
+      } catch (error) {
+        errors.push({
+          page,
+          message: error instanceof Error ? error.message : 'Unknown title-block vision error',
+        });
+      }
     }
   }
+
+  const workerCount = Math.max(1, Math.min(settings.concurrency, pages.length));
+  await Promise.all(Array.from({ length: workerCount }, () => visionWorker()));
+
+  results.sort((left, right) => left.page - right.page);
+  errors.sort((left, right) => left.page - right.page);
 
   return {
     generated_by: 'crossbeam-title-block-vision',

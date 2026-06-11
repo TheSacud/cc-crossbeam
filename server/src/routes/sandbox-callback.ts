@@ -13,6 +13,11 @@ import {
   verifySandboxCallbackToken,
   type SandboxCallbackContext,
 } from '../services/sandbox-callback-auth.js';
+import {
+  buildAnalysisPhaseOutputData,
+  buildResponsePhaseOutputData,
+  buildReviewPhaseOutputData,
+} from '../services/sandbox.js';
 
 export const sandboxCallbackRouter = Router();
 
@@ -77,6 +82,37 @@ function safeOutputFilename(filename: string): string {
   return path.posix.basename(filename.replace(/\\/g, '/'));
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+// Phase fields (corrections_letter_md, review_checklist_json, ...) are derived
+// here from raw_artifacts so the sandbox agent and the post-processor share a
+// single canonical builder implementation instead of drifting copies.
+function withCanonicalPhaseData(
+  flowPhase: OutputFlowPhase,
+  data: Record<string, unknown>,
+): Record<string, unknown> {
+  const rawArtifacts = asRecord(data.raw_artifacts);
+  if (!rawArtifacts) {
+    return data;
+  }
+
+  try {
+    const phasePatch = flowPhase === 'review'
+      ? buildReviewPhaseOutputData(rawArtifacts)
+      : flowPhase === 'analysis'
+        ? buildAnalysisPhaseOutputData(rawArtifacts)
+        : buildResponsePhaseOutputData(rawArtifacts);
+    return { ...data, ...phasePatch };
+  } catch (error) {
+    console.warn('Canonical phase output build failed; storing agent payload as-is:', error);
+    return data;
+  }
+}
+
 function inferContentType(filename: string, supplied?: string): string {
   if (supplied) return supplied;
   const ext = filename.split('.').pop()?.toLowerCase();
@@ -129,7 +165,8 @@ sandboxCallbackRouter.post('/output', async (req, res, next) => {
     const outputId = await createOutputRecord(
       context.projectId,
       context.flowPhase as OutputFlowPhase,
-      body.data,
+      withCanonicalPhaseData(context.flowPhase as OutputFlowPhase, body.data),
+      context.userId,
     );
     return res.json({ outputId });
   } catch (error) {

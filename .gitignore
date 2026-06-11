@@ -63,6 +63,9 @@ test-assets/HCD-ADU-Handbook-2025.pdf
 # Demo artifacts (local-only)
 demo-output/
 demo-workspace/
+
+# Real project documents used for local Viseu testing (privacy: keep out of the public repo)
+server/Info/
 scripts/
 !scripts/
 !scripts/check-supabase-setup.mjs

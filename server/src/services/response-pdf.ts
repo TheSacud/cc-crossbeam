@@ -14,19 +14,16 @@ function runInlinePython(scriptPath: string, source: string, args: string[], tim
   });
 }
 
-function readResponseLetterMarkdown(output: Record<string, unknown>): string | null {
+function readResponseLetterMarkdown(
+  output: Record<string, unknown>,
+  rawArtifacts: Record<string, unknown> | null,
+): string | null {
   if (typeof output.response_letter_md === 'string' && output.response_letter_md.trim()) {
     return output.response_letter_md;
   }
 
-  const rawArtifacts = output.raw_artifacts;
-  if (
-    rawArtifacts &&
-    typeof rawArtifacts === 'object' &&
-    !Array.isArray(rawArtifacts) &&
-    typeof (rawArtifacts as Record<string, unknown>)['response_letter.md'] === 'string'
-  ) {
-    const markdown = (rawArtifacts as Record<string, string>)['response_letter.md'];
+  const markdown = rawArtifacts?.['response_letter.md'];
+  if (typeof markdown === 'string') {
     return markdown.trim() ? markdown : null;
   }
 
@@ -200,6 +197,7 @@ export async function generateResponseLetterPdfForProject(
   const {
     getLatestOutputForPhase,
     insertMessage,
+    loadRawArtifacts,
     updateOutputRecord,
     uploadOutputArtifact,
   } = await import('./supabase.js');
@@ -212,7 +210,9 @@ export async function generateResponseLetterPdfForProject(
     return { generated: false, reason: 'response_letter.pdf already exists for the latest response output' };
   }
 
-  const markdown = readResponseLetterMarkdown(latestOutput as Record<string, unknown>);
+  const needsRawArtifacts = !(typeof latestOutput.response_letter_md === 'string' && latestOutput.response_letter_md.trim());
+  const rawArtifacts = needsRawArtifacts ? await loadRawArtifacts(latestOutput) : null;
+  const markdown = readResponseLetterMarkdown(latestOutput as Record<string, unknown>, rawArtifacts);
   if (!markdown) {
     return { generated: false, reason: 'response_letter.md is missing from the latest response output' };
   }
