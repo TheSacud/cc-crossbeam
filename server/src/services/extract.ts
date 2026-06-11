@@ -13,6 +13,12 @@ import {
 
 const PAGE_RENDER_DPI = 300;
 const TITLE_BLOCK_DPI = 400;
+const BYTES_PER_MB = 1024 * 1024;
+const DEFAULT_MAX_PDF_MB = 80;
+const DEFAULT_MAX_PLAN_PDF_PAGES = 120;
+const DEFAULT_MAX_DOCUMENT_PDF_PAGES = 80;
+const DEFAULT_MAX_DOCUMENT_TEXT_TOTAL_PAGES = 160;
+const PDF_MAGIC_HEADER_BYTES = 1024;
 
 export interface PageTextEntry {
   page: number;
@@ -50,6 +56,7 @@ export interface FileRecord {
   storage_path: string;
   file_type?: string | null;
   created_at?: string | null;
+  size_bytes?: number | null;
 }
 
 interface UploadArtifact {
@@ -76,11 +83,102 @@ interface DocumentTextArtifact {
     page_count: number;
     pages_with_native_text: number;
     pages: PageTextEntry[];
+    skipped_reason?: string;
   }>;
+}
+
+export interface PdfExtractionLimits {
+  maxBytes: number;
+  maxPages: number;
+}
+
+interface DocumentTextLimits extends PdfExtractionLimits {
+  maxTotalPages: number;
 }
 
 function resolvePythonCommand(): string | null {
   return resolveCommand('python3') || resolveCommand('python');
+}
+
+function optionalPositiveIntegerFromEnv(name: string): number | null {
+  const raw = process.env[name]?.trim();
+  if (!raw) {
+    return null;
+  }
+
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function positiveIntegerFromEnv(name: string, fallback: number): number {
+  return optionalPositiveIntegerFromEnv(name) ?? fallback;
+}
+
+function maxPdfBytesFromEnv(): number {
+  const explicitBytes = optionalPositiveIntegerFromEnv('CROSSBEAM_MAX_PDF_BYTES');
+  if (explicitBytes) {
+    return explicitBytes;
+  }
+  return positiveIntegerFromEnv('CROSSBEAM_MAX_PDF_MB', DEFAULT_MAX_PDF_MB) * BYTES_PER_MB;
+}
+
+export function pdfExtractionLimitsFromEnv(kind: 'plan-binder' | 'document' = 'plan-binder'): PdfExtractionLimits {
+  return {
+    maxBytes: maxPdfBytesFromEnv(),
+    maxPages: kind === 'plan-binder'
+      ? positiveIntegerFromEnv('CROSSBEAM_MAX_PLAN_PDF_PAGES', DEFAULT_MAX_PLAN_PDF_PAGES)
+      : positiveIntegerFromEnv('CROSSBEAM_MAX_DOCUMENT_PDF_PAGES', DEFAULT_MAX_DOCUMENT_PDF_PAGES),
+  };
+}
+
+function documentTextLimitsFromEnv(): DocumentTextLimits {
+  return {
+    ...pdfExtractionLimitsFromEnv('document'),
+    maxTotalPages: positiveIntegerFromEnv(
+      'CROSSBEAM_MAX_DOCUMENT_TEXT_TOTAL_PAGES',
+      DEFAULT_MAX_DOCUMENT_TEXT_TOTAL_PAGES,
+    ),
+  };
+}
+
+function formatBytes(bytes: number): string {
+  return `${(bytes / BYTES_PER_MB).toFixed(1)} MB`;
+}
+
+export function hasPdfMagicBytes(buffer: Buffer): boolean {
+  const header = buffer
+    .subarray(0, Math.min(buffer.length, PDF_MAGIC_HEADER_BYTES))
+    .toString('latin1');
+  return /^\s*%PDF-/.test(header);
+}
+
+function assertPdfBufferIsSafe(filename: string, buffer: Buffer, limits: PdfExtractionLimits): void {
+  if (buffer.length > limits.maxBytes) {
+    throw new Error(
+      `${filename} is ${formatBytes(buffer.length)}, above the ${formatBytes(limits.maxBytes)} PDF size limit`,
+    );
+  }
+
+  if (!hasPdfMagicBytes(buffer)) {
+    throw new Error(`${filename} is not a valid PDF: missing %PDF header`);
+  }
+}
+
+function assertPdfMetadataIsSafe(file: FileRecord, limits: PdfExtractionLimits): void {
+  if (typeof file.size_bytes === 'number' && file.size_bytes > limits.maxBytes) {
+    throw new Error(
+      `${file.filename} is ${formatBytes(file.size_bytes)}, above the ${formatBytes(limits.maxBytes)} PDF size limit`,
+    );
+  }
+}
+
+function assertPdfPageCountIsSafe(filename: string, pageCount: number, limits: PdfExtractionLimits): void {
+  if (!Number.isSafeInteger(pageCount) || pageCount <= 0) {
+    throw new Error(`${filename} has an invalid PDF page count: ${pageCount}`);
+  }
+  if (pageCount > limits.maxPages) {
+    throw new Error(`${filename} has ${pageCount} pages, above the ${limits.maxPages} page limit`);
+  }
 }
 
 function runInlinePython(scriptPath: string, source: string, args: string[], timeout = 180_000): string {
@@ -625,6 +723,7 @@ function getPdfPageCount(pdfPath: string): number {
   if (pdfinfoPath) {
     const output = execFileSync(pdfinfoPath, [pdfPath], {
       encoding: 'utf8',
+      timeout: 30_000,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const match = output.match(/^Pages:\s+(\d+)/m);
@@ -648,7 +747,7 @@ doc = fitz.open(sys.argv[1])
 print(len(doc))
 `;
   const scriptPath = path.join(path.dirname(pdfPath), `pdf-page-count-${Date.now()}.py`);
-  const raw = runInlinePython(scriptPath, script, [pdfPath]);
+  const raw = runInlinePython(scriptPath, script, [pdfPath], 30_000);
   const parsed = Number(raw.trim());
   if (!Number.isFinite(parsed)) {
     throw new Error(`Could not determine page count for ${pdfPath}`);
@@ -656,10 +755,35 @@ print(len(doc))
   return parsed;
 }
 
-async function downloadPdfToPath(
+function validatePdfFileForExtraction(
   file: FileRecord,
-  destinationPath: string,
-): Promise<void> {
+  pdfPath: string,
+  limits: PdfExtractionLimits,
+): number {
+  const sizeBytes = fs.statSync(pdfPath).size;
+  if (sizeBytes > limits.maxBytes) {
+    throw new Error(
+      `${file.filename} is ${formatBytes(sizeBytes)}, above the ${formatBytes(limits.maxBytes)} PDF size limit`,
+    );
+  }
+
+  const fd = fs.openSync(pdfPath, 'r');
+  try {
+    const header = Buffer.alloc(PDF_MAGIC_HEADER_BYTES);
+    const bytesRead = fs.readSync(fd, header, 0, PDF_MAGIC_HEADER_BYTES, 0);
+    if (!hasPdfMagicBytes(header.subarray(0, bytesRead))) {
+      throw new Error(`${file.filename} is not a valid PDF: missing %PDF header`);
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+
+  const pageCount = getPdfPageCount(pdfPath);
+  assertPdfPageCountIsSafe(file.filename, pageCount, limits);
+  return pageCount;
+}
+
+function storagePartsForFile(file: FileRecord): { bucket: string; storagePath: string } {
   let bucket: string;
   let storagePath: string;
   if (file.storage_path.startsWith('crossbeam-demo-assets/')) {
@@ -672,6 +796,17 @@ async function downloadPdfToPath(
     bucket = 'crossbeam-uploads';
     storagePath = file.storage_path;
   }
+  return { bucket, storagePath };
+}
+
+async function downloadPdfToPath(
+  file: FileRecord,
+  destinationPath: string,
+  limits: PdfExtractionLimits,
+): Promise<void> {
+  assertPdfMetadataIsSafe(file, limits);
+
+  const { bucket, storagePath } = storagePartsForFile(file);
 
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -680,7 +815,9 @@ async function downloadPdfToPath(
       .download(storagePath);
 
     if (!error && data) {
-      fs.writeFileSync(destinationPath, Buffer.from(await data.arrayBuffer()));
+      const buffer = Buffer.from(await data.arrayBuffer());
+      assertPdfBufferIsSafe(file.filename, buffer, limits);
+      fs.writeFileSync(destinationPath, buffer);
       return;
     }
 
@@ -698,14 +835,23 @@ async function buildDocumentTextArtifact(
 ): Promise<DocumentTextArtifact> {
   const pdfFiles = sortPdfFiles(files);
   const documents: DocumentTextArtifact['documents'] = [];
+  const limits = documentTextLimitsFromEnv();
+  let totalPages = 0;
 
   for (const file of pdfFiles) {
     const pdfPath = path.join(tmpDir, `doc-text-${documents.length + 1}.pdf`);
     try {
-      await downloadPdfToPath(file, pdfPath);
+      await downloadPdfToPath(file, pdfPath, limits);
+      const pageCount = validatePdfFileForExtraction(file, pdfPath, limits);
+      if (totalPages + pageCount > limits.maxTotalPages) {
+        throw new Error(
+          `${file.filename} would exceed the ${limits.maxTotalPages} total supporting-document page limit`,
+        );
+      }
+      totalPages += pageCount;
+
       let pages: PageTextEntry[];
       try {
-        const pageCount = getPdfPageCount(pdfPath);
         pages = extractPageText(pdfPath, pageCount, tmpDir);
       } catch (popplerError) {
         console.warn(`Poppler text extraction failed for ${file.filename}, falling back to PyMuPDF:`, popplerError);
@@ -720,12 +866,14 @@ async function buildDocumentTextArtifact(
       });
     } catch (error) {
       console.warn(`Failed to extract document text for ${file.filename}:`, error);
+      const skippedReason = error instanceof Error ? error.message : 'Unknown PDF extraction error';
       documents.push({
         filename: file.filename,
         file_type: file.file_type || null,
         page_count: 0,
         pages_with_native_text: 0,
         pages: [],
+        skipped_reason: skippedReason,
       });
     }
   }
@@ -973,35 +1121,16 @@ export async function extractPdfForProject(
   }
   console.log(`Project ${projectId}: selected ${pdfFile.filename} (${pdfFile.file_type || 'unknown'}) for extraction`);
 
-  let bucket: string;
-  let storagePath: string;
-  if (pdfFile.storage_path.startsWith('crossbeam-demo-assets/')) {
-    bucket = 'crossbeam-demo-assets';
-    storagePath = pdfFile.storage_path.replace('crossbeam-demo-assets/', '');
-  } else if (pdfFile.storage_path.startsWith('crossbeam-uploads/')) {
-    bucket = 'crossbeam-uploads';
-    storagePath = pdfFile.storage_path.replace('crossbeam-uploads/', '');
-  } else {
-    bucket = 'crossbeam-uploads';
-    storagePath = pdfFile.storage_path;
-  }
-
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-extract-'));
   console.log(`Extracting PDF for project ${projectId} in ${tmpDir}`);
   insertMessage(projectId, 'system', 'Extracting plan pages from PDF...').catch(() => {});
 
   try {
-    const { data: pdfData, error: dlErr } = await supabase.storage
-      .from(bucket)
-      .download(storagePath);
-
-    if (dlErr || !pdfData) {
-      throw new Error(`PDF download failed: ${dlErr?.message}`);
-    }
-
+    const limits = pdfExtractionLimitsFromEnv('plan-binder');
     const pdfPath = path.join(tmpDir, 'binder.pdf');
-    fs.writeFileSync(pdfPath, Buffer.from(await pdfData.arrayBuffer()));
-    console.log(`Downloaded PDF: ${(fs.statSync(pdfPath).size / 1024 / 1024).toFixed(1)} MB`);
+    await downloadPdfToPath(pdfFile, pdfPath, limits);
+    const expectedPageCount = validatePdfFileForExtraction(pdfFile, pdfPath, limits);
+    console.log(`Downloaded PDF: ${(fs.statSync(pdfPath).size / 1024 / 1024).toFixed(1)} MB, ${expectedPageCount} pages`);
 
     const pagesDir = path.join(tmpDir, 'pages-png');
     fs.mkdirSync(pagesDir);
@@ -1024,6 +1153,9 @@ export async function extractPdfForProject(
 
     const pageCount = fs.readdirSync(pagesDir).filter(name => name.endsWith('.png')).length;
     console.log(`Extracted ${pageCount} pages at ${PAGE_RENDER_DPI} DPI`);
+    if (pageCount !== expectedPageCount) {
+      console.warn(`Rendered page count (${pageCount}) differs from PDF metadata (${expectedPageCount}) for ${pdfFile.filename}`);
+    }
 
     const tbDir = path.join(tmpDir, 'title-blocks');
     fs.mkdirSync(tbDir);
@@ -1083,6 +1215,7 @@ export async function extractPdfForProject(
     console.log(`Archives: pages=${pagesMB}MB, title-blocks=${tbMB}MB`);
 
     const archiveBucket = 'crossbeam-uploads';
+    const { storagePath } = storagePartsForFile(pdfFile);
     const prefix = storagePath.replace(/\/[^/]+$/, '');
 
     const artifacts: UploadArtifact[] = [

@@ -4,7 +4,42 @@ import assert from 'node:assert/strict';
 process.env.SUPABASE_URL ||= 'http://127.0.0.1:54321';
 process.env.SUPABASE_SERVICE_ROLE_KEY ||= 'test-key';
 
-const { inferScale, selectPlanBinderPdf } = await import('../dist/services/extract.js');
+const {
+  hasPdfMagicBytes,
+  inferScale,
+  pdfExtractionLimitsFromEnv,
+  selectPlanBinderPdf,
+} = await import('../dist/services/extract.js');
+
+const LIMIT_ENV_NAMES = [
+  'CROSSBEAM_MAX_PDF_BYTES',
+  'CROSSBEAM_MAX_PDF_MB',
+  'CROSSBEAM_MAX_PLAN_PDF_PAGES',
+  'CROSSBEAM_MAX_DOCUMENT_PDF_PAGES',
+];
+
+function withLimitEnv(values, callback) {
+  const previous = Object.fromEntries(
+    LIMIT_ENV_NAMES.map((name) => [name, process.env[name]]),
+  );
+
+  for (const name of LIMIT_ENV_NAMES) {
+    delete process.env[name];
+  }
+  Object.assign(process.env, values);
+
+  try {
+    callback();
+  } finally {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value == null) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    }
+  }
+}
 
 function fileRecord(filename, overrides = {}) {
   return {
@@ -27,6 +62,48 @@ test('inferScale normalizes common title-block OCR mistakes', () => {
   assert.equal(inferScale('ee | | ESCALA: [11100 |'), '1:100');
   assert.equal(inferScale('| ESCALA: | SCALA: 4:100 | 100 A'), '1:100');
   assert.equal(inferScale('ESCALA: l:2O'), '1:20');
+});
+
+test('hasPdfMagicBytes accepts only PDF headers', () => {
+  assert.equal(hasPdfMagicBytes(Buffer.from('%PDF-1.7\n')), true);
+  assert.equal(hasPdfMagicBytes(Buffer.from('\n%PDF-1.4\n')), true);
+  assert.equal(hasPdfMagicBytes(Buffer.from('not a pdf')), false);
+});
+
+test('pdfExtractionLimitsFromEnv reads safe configured limits', () => {
+  withLimitEnv(
+    {
+      CROSSBEAM_MAX_PDF_MB: '2',
+      CROSSBEAM_MAX_PLAN_PDF_PAGES: '42',
+      CROSSBEAM_MAX_DOCUMENT_PDF_PAGES: '12',
+    },
+    () => {
+      assert.deepEqual(pdfExtractionLimitsFromEnv('plan-binder'), {
+        maxBytes: 2 * 1024 * 1024,
+        maxPages: 42,
+      });
+      assert.deepEqual(pdfExtractionLimitsFromEnv('document'), {
+        maxBytes: 2 * 1024 * 1024,
+        maxPages: 12,
+      });
+    },
+  );
+});
+
+test('pdfExtractionLimitsFromEnv ignores unsafe env values', () => {
+  withLimitEnv(
+    {
+      CROSSBEAM_MAX_PDF_BYTES: '4096',
+      CROSSBEAM_MAX_PDF_MB: '2',
+      CROSSBEAM_MAX_PLAN_PDF_PAGES: '0',
+    },
+    () => {
+      assert.deepEqual(pdfExtractionLimitsFromEnv('plan-binder'), {
+        maxBytes: 4096,
+        maxPages: 120,
+      });
+    },
+  );
 });
 
 test('selectPlanBinderPdf prefers the explicit plan binder PDF', () => {
