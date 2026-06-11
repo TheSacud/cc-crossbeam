@@ -201,6 +201,7 @@ PRE-EXTRACTED DATA:
 - Title block crops are ALREADY in ${SANDBOX_FILES_PATH}/title-blocks/
 - Native PDF text, when available, is already in ${SANDBOX_FILES_PATH}/page-text.json
 - OCR text from title block crops may be available in ${SANDBOX_FILES_PATH}/title-block-text.json
+- Structured title-block vision metadata may be available in ${SANDBOX_FILES_PATH}/title-block-vision.json
 - Text extracted from every submitted PDF, including supporting documents, may be available in ${SANDBOX_FILES_PATH}/document-text.json
 - A deterministic preliminary sheet manifest may already be loaded at ${SANDBOX_OUTPUT_PATH}/sheet-manifest.json
 - Preflight extraction metadata may be available at ${SANDBOX_FILES_PATH}/preflight-summary.json

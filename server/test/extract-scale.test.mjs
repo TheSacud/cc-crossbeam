@@ -5,8 +5,10 @@ process.env.SUPABASE_URL ||= 'http://127.0.0.1:54321';
 process.env.SUPABASE_SERVICE_ROLE_KEY ||= 'test-key';
 
 const {
+  buildPreliminarySheetManifest,
   hasPdfMagicBytes,
   inferScale,
+  normalizeVisionSheetMetadata,
   pdfExtractionLimitsFromEnv,
   selectPlanBinderPdf,
 } = await import('../dist/services/extract.js');
@@ -49,6 +51,16 @@ function fileRecord(filename, overrides = {}) {
     file_type: 'other',
     created_at: null,
     ...overrides,
+  };
+}
+
+function pageText(page, text = '') {
+  return {
+    page,
+    text,
+    text_length: text.length,
+    has_extractable_text: text.length > 0,
+    source: text.length > 0 ? 'pdf-native' : 'none',
   };
 }
 
@@ -104,6 +116,61 @@ test('pdfExtractionLimitsFromEnv ignores unsafe env values', () => {
       });
     },
   );
+});
+
+test('normalizeVisionSheetMetadata canonicalizes structured vision metadata', () => {
+  const metadata = normalizeVisionSheetMetadata(3, {
+    has_title_block: true,
+    selected_crop: 'right',
+    title: ' Planta do Piso 1 ',
+    desenho: '7',
+    scale: '1 / 100',
+    discipline: 'arquitetura-urbanismo',
+    confidence: 'high',
+    notes: 'visible legend',
+  }, 'test-model');
+
+  assert.deepEqual(metadata, {
+    page: 3,
+    has_title_block: true,
+    selected_crop: 'right',
+    title: 'Planta do Piso 1',
+    desenho: 7,
+    scale: '1:100',
+    discipline: 'arquitetura-urbanismo',
+    confidence: 'high',
+    notes: 'visible legend',
+    source: 'anthropic-vision',
+    model: 'test-model',
+  });
+});
+
+test('buildPreliminarySheetManifest prefers usable vision metadata over OCR fallback', () => {
+  const manifest = buildPreliminarySheetManifest(
+    [pageText(1, 'random cover text without sheet title')],
+    'binder.pdf',
+    [],
+    [
+      normalizeVisionSheetMetadata(1, {
+        has_title_block: true,
+        selected_crop: 'bottom-right',
+        title: 'Planta de Implantacao',
+        desenho: 2,
+        scale: '1:200',
+        discipline: 'arquitetura-urbanismo',
+        confidence: 'medium',
+        notes: 'legend in bottom-right crop',
+      }, 'test-model'),
+    ],
+  );
+
+  assert.equal(manifest.generated_by, 'crossbeam-preextract-vision');
+  assert.equal(manifest.sheets[0].title, 'Planta de Implantacao');
+  assert.equal(manifest.sheets[0].desenho, 2);
+  assert.equal(manifest.sheets[0].scale, '1:200');
+  assert.equal(manifest.sheets[0].metadata_source, 'vision');
+  assert.equal(manifest.sheets[0].selected_title_block_crop, 'bottom-right');
+  assert.equal(manifest.sheets[0].needs_visual_review, true);
 });
 
 test('selectPlanBinderPdf prefers the explicit plan binder PDF', () => {
