@@ -1210,32 +1210,6 @@ function asRecordOrNull(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
 }
 
-function buildReviewPhaseOutputData(allFiles) {
-  return {
-    corrections_letter_md: allFiles['draft_corrections.md'] || null,
-    review_checklist_json: allFiles['draft_corrections.json'] || allFiles['review_summary.json'] || null,
-    project_understanding_json: asRecordOrNull(allFiles['project_understanding.json']),
-  };
-}
-
-function buildAnalysisPhaseOutputData(allFiles) {
-  return {
-    corrections_analysis_json: allFiles['corrections_categorized.json'] || null,
-    applicant_questions_json: allFiles['applicant_questions.json'] || allFiles['contractor_questions.json'] || null,
-    project_understanding_json: asRecordOrNull(allFiles['project_understanding.json']),
-  };
-}
-
-function buildResponsePhaseOutputData(allFiles) {
-  return {
-    response_letter_md: allFiles['response_letter.md'] || null,
-    professional_scope_md: allFiles['professional_scope.md'] || null,
-    corrections_report_md: allFiles['corrections_report.md'] || null,
-    sheet_annotations_json: allFiles['sheet_annotations.json'] || null,
-    project_understanding_json: asRecordOrNull(allFiles['project_understanding.json']),
-  };
-}
-
 async function runClaudePrompt(promptText, maxTurnsOverride = ${budget.maxTurns}) {
   const result = await query({
     prompt: promptText,
@@ -1361,16 +1335,14 @@ async function runAgent() {
       agent_duration_ms: Date.now() - startTime,
     };
 
+    // Phase-specific fields (corrections_letter_md, review_checklist_json, ...)
+    // are derived server-side from raw_artifacts by the /output callback.
     if (flowPhase === 'review') {
-      Object.assign(outputData, buildReviewPhaseOutputData(allFiles));
       if (fs.existsSync(path.join(OUTPUT_PATH, 'corrections_letter.pdf'))) {
         const pdfContent = fs.readFileSync(path.join(OUTPUT_PATH, 'corrections_letter.pdf'));
         outputData.corrections_letter_pdf_path = await uploadFile('corrections_letter.pdf', pdfContent);
       }
-    } else if (flowPhase === 'analysis') {
-      Object.assign(outputData, buildAnalysisPhaseOutputData(allFiles));
     } else if (flowPhase === 'response') {
-      Object.assign(outputData, buildResponsePhaseOutputData(allFiles));
       if (fs.existsSync(path.join(OUTPUT_PATH, 'response_letter.pdf'))) {
         const pdfContent = fs.readFileSync(path.join(OUTPUT_PATH, 'response_letter.pdf'));
         outputData.response_letter_pdf_path = await uploadFile('response_letter.pdf', pdfContent);
@@ -1386,8 +1358,9 @@ async function runAgent() {
     const outputRecordId = await createOutputRecord(outputData);
 
     // Insert applicant questions linked to this output version
-	    if (flowPhase === 'analysis' && outputData.applicant_questions_json) {
-	      const questions = outputData.applicant_questions_json;
+    const questionsSource = allFiles['applicant_questions.json'] || allFiles['contractor_questions.json'] || null;
+    if (flowPhase === 'analysis' && questionsSource) {
+      const questions = questionsSource;
       let questionsList = [];
       if (Array.isArray(questions)) {
         questionsList = questions;

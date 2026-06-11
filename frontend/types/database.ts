@@ -82,7 +82,9 @@ export interface Output {
   corrections_report_md: string | null
   sheet_annotations_json: Json | null
 
-  // Catch-all
+  // Catch-all. Newer rows hold a storage pointer
+  // ({ storage_pointer: true, bucket, path, size_bytes, sha256 }) instead of
+  // the inline record; the payload lives in the crossbeam-outputs bucket.
   raw_artifacts: Json | null
 
   // Agent run metadata

@@ -70,7 +70,7 @@ Structured results from completed flows.
 | project_id | UUID | FK to projects |
 | flow_phase | text | `analysis`, `response`, `review` |
 | version | integer | |
-| raw_artifacts | jsonb | catch-all for all output data |
+| raw_artifacts | jsonb | catch-all for all output data; new rows store a storage pointer `{storage_pointer: true, bucket, path, size_bytes, sha256}` with the payload at `crossbeam-outputs/{user_id}/{project_id}/raw-artifacts-v{version}.json` (older rows still inline the record) |
 | corrections_letter_md | text | city review output |
 | corrections_letter_pdf_path | text | storage path |
 | corrections_analysis_json | jsonb | phase 1 analysis |

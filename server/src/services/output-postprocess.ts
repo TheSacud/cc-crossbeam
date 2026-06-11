@@ -9,6 +9,8 @@ import {
   getLatestOutputForPhase,
   getRecentOutputsForPhase,
   insertMessage,
+  loadRawArtifacts,
+  offloadRawArtifacts,
   updateOutputRecord,
 } from './supabase.js';
 import { attachEvidenceCropsForProject } from './evidence-crops.js';
@@ -35,6 +37,17 @@ function asRawArtifactsRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+async function loadRawArtifactsOrNull(
+  output: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+  try {
+    return await loadRawArtifacts(output);
+  } catch (error) {
+    console.warn('Could not load raw artifacts for output snapshot:', error);
+    return null;
+  }
+}
+
 export async function postProcessLatestOutput(
   projectId: string,
   flowType: InternalFlowType,
@@ -45,14 +58,15 @@ export async function postProcessLatestOutput(
     return { updated: false, reason: `No ${flowPhase} output record found` };
   }
 
-  let rawArtifacts = asRawArtifactsRecord(latestOutput.raw_artifacts);
+  const project = await getProject(projectId);
+
+  let rawArtifacts = await loadRawArtifacts(latestOutput);
   if (!rawArtifacts) {
     return { updated: false, reason: 'Latest output has no raw_artifacts payload' };
   }
 
   if (flowType !== 'corrections-response') {
     try {
-      const project = await getProject(projectId);
       rawArtifacts = await attachEvidenceCropsForProject(projectId, project.user_id as string, rawArtifacts);
     } catch (cropError) {
       const cropMessage = cropError instanceof Error ? cropError.message : 'Unknown crop generation error';
@@ -78,19 +92,17 @@ export async function postProcessLatestOutput(
     };
     const qualityGate = evaluateReviewOutputQuality(currentSnapshot);
     const recentOutputs = await getRecentOutputsForPhase(projectId, 'review', 10);
-    const baseline = selectRegressionBaseline(
-      recentOutputs.map((output) => ({
-        id: output.id as string,
-        created_at: output.created_at as string | undefined,
-        agent_turns: output.agent_turns as number | undefined,
-        agent_cost_usd: output.agent_cost_usd as number | undefined,
-        agent_duration_ms: output.agent_duration_ms as number | undefined,
-        project_understanding_json: output.project_understanding_json,
-        review_checklist_json: output.review_checklist_json,
-        raw_artifacts: output.raw_artifacts,
-      })),
-      latestOutput.id as string,
-    );
+    const baselineSnapshots = await Promise.all(recentOutputs.map(async (output) => ({
+      id: output.id as string,
+      created_at: output.created_at as string | undefined,
+      agent_turns: output.agent_turns as number | undefined,
+      agent_cost_usd: output.agent_cost_usd as number | undefined,
+      agent_duration_ms: output.agent_duration_ms as number | undefined,
+      project_understanding_json: output.project_understanding_json,
+      review_checklist_json: output.review_checklist_json,
+      raw_artifacts: await loadRawArtifactsOrNull(output),
+    })));
+    const baseline = selectRegressionBaseline(baselineSnapshots, latestOutput.id as string);
     const regressionReport = compareReviewOutputRegression(currentSnapshot, baseline);
     const patchRawArtifacts = asRawArtifactsRecord(patch.raw_artifacts) || {};
     patch.raw_artifacts = {
@@ -98,6 +110,22 @@ export async function postProcessLatestOutput(
       'quality_gate.json': qualityGate,
       'regression_report.json': regressionReport,
     };
+  }
+
+  // Keep the heavy payload out of the row: re-upload the (possibly augmented)
+  // raw artifacts and store only the pointer, matching createOutputRecord.
+  const finalRawArtifacts = asRawArtifactsRecord(patch.raw_artifacts);
+  if (finalRawArtifacts && typeof latestOutput.version === 'number') {
+    try {
+      patch.raw_artifacts = await offloadRawArtifacts(
+        project.user_id as string,
+        projectId,
+        latestOutput.version,
+        finalRawArtifacts,
+      );
+    } catch (offloadError) {
+      console.warn(`Raw artifacts offload failed for project ${projectId}; storing payload inline:`, offloadError);
+    }
   }
 
   await updateOutputRecord(latestOutput.id as string, patch);

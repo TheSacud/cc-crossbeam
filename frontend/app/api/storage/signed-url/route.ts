@@ -50,48 +50,57 @@ export async function POST(request: NextRequest) {
     }
 
     const allowedPaths = new Set(normalizeStoragePath(bucket, path))
-
-    const { data: files, error: filesError } = await supabase
-      .schema('crossbeam')
-      .from('files')
-      .select('storage_path')
-      .eq('project_id', project_id)
-
-    if (filesError) {
-      return NextResponse.json({ error: 'Could not verify file access' }, { status: 500 })
-    }
-
-    const fileAllowed = (files || []).some((file) => allowedPaths.has(file.storage_path))
-
-    const { data: outputs, error: outputsError } = await supabase
-      .schema('crossbeam')
-      .from('outputs')
-      .select('corrections_letter_pdf_path, response_letter_pdf_path, review_checklist_json, corrections_analysis_json, applicant_questions_json, project_understanding_json, raw_artifacts')
-      .eq('project_id', project_id)
-
-    if (outputsError) {
-      return NextResponse.json({ error: 'Could not verify output access' }, { status: 500 })
-    }
-
-    const outputAllowed = (outputs || []).some((output) => {
-      if (
-        allowedPaths.has(output.corrections_letter_pdf_path || '') ||
-        allowedPaths.has(output.response_letter_pdf_path || '')
-      ) {
-        return true
-      }
-      return jsonIncludesStoragePath(output.review_checklist_json as JsonValue, allowedPaths) ||
-        jsonIncludesStoragePath(output.corrections_analysis_json as JsonValue, allowedPaths) ||
-        jsonIncludesStoragePath(output.applicant_questions_json as JsonValue, allowedPaths) ||
-        jsonIncludesStoragePath(output.project_understanding_json as JsonValue, allowedPaths) ||
-        jsonIncludesStoragePath(output.raw_artifacts as JsonValue, allowedPaths)
-    })
-
-    if (!fileAllowed && !outputAllowed) {
-      return NextResponse.json({ error: 'Storage object is not registered for this project' }, { status: 403 })
-    }
-
     const storagePath = normalizeStoragePath(bucket, path)[0]
+
+    // Everything the server writes to crossbeam-outputs (offloaded raw_artifacts
+    // JSON, evidence crops, generated PDFs) lives under {owner}/{project}/, and
+    // project access was already verified above. Offloaded raw_artifacts rows
+    // only carry a storage pointer, so paths inside the payload can no longer be
+    // validated by scanning the row JSON.
+    const prefixAllowed = bucket === 'crossbeam-outputs' &&
+      storagePath.startsWith(`${project.user_id}/${project_id}/`)
+
+    if (!prefixAllowed) {
+      const { data: files, error: filesError } = await supabase
+        .schema('crossbeam')
+        .from('files')
+        .select('storage_path')
+        .eq('project_id', project_id)
+
+      if (filesError) {
+        return NextResponse.json({ error: 'Could not verify file access' }, { status: 500 })
+      }
+
+      const fileAllowed = (files || []).some((file) => allowedPaths.has(file.storage_path))
+
+      const { data: outputs, error: outputsError } = await supabase
+        .schema('crossbeam')
+        .from('outputs')
+        .select('corrections_letter_pdf_path, response_letter_pdf_path, review_checklist_json, corrections_analysis_json, applicant_questions_json, project_understanding_json, raw_artifacts')
+        .eq('project_id', project_id)
+
+      if (outputsError) {
+        return NextResponse.json({ error: 'Could not verify output access' }, { status: 500 })
+      }
+
+      const outputAllowed = (outputs || []).some((output) => {
+        if (
+          allowedPaths.has(output.corrections_letter_pdf_path || '') ||
+          allowedPaths.has(output.response_letter_pdf_path || '')
+        ) {
+          return true
+        }
+        return jsonIncludesStoragePath(output.review_checklist_json as JsonValue, allowedPaths) ||
+          jsonIncludesStoragePath(output.corrections_analysis_json as JsonValue, allowedPaths) ||
+          jsonIncludesStoragePath(output.applicant_questions_json as JsonValue, allowedPaths) ||
+          jsonIncludesStoragePath(output.project_understanding_json as JsonValue, allowedPaths) ||
+          jsonIncludesStoragePath(output.raw_artifacts as JsonValue, allowedPaths)
+      })
+
+      if (!fileAllowed && !outputAllowed) {
+        return NextResponse.json({ error: 'Storage object is not registered for this project' }, { status: 403 })
+      }
+    }
     const service = createServiceClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,

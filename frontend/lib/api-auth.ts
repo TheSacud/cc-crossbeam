@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto'
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js'
@@ -6,6 +7,12 @@ export interface AuthResult {
   authenticated: boolean
   userId: string | null
   isApiKey: boolean
+}
+
+function constantTimeEquals(actual: string, expected: string): boolean {
+  const actualBuffer = Buffer.from(actual)
+  const expectedBuffer = Buffer.from(expected)
+  return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer)
 }
 
 /**
@@ -18,7 +25,7 @@ export async function authenticateRequest(request: NextRequest): Promise<AuthRes
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.slice(7)
     const apiKey = process.env.CROSSBEAM_API_KEY
-    if (apiKey && token === apiKey) {
+    if (apiKey && constantTimeEquals(token, apiKey)) {
       return { authenticated: true, userId: null, isApiKey: true }
     }
     return { authenticated: false, userId: null, isApiKey: false }
