@@ -9,6 +9,7 @@ import {
   getProject,
   insertMessage,
   processingStatusForFlow,
+  startProjectProcessingHeartbeat,
   tryStartProjectProcessing,
 } from '../services/supabase.js';
 import { runCrossBeamFlow } from '../services/sandbox.js';
@@ -67,6 +68,7 @@ generateRouter.post('/', async (req, res) => {
     return res.status(503).json({ error: message });
   }
 
+  let runId: string;
   try {
     const claim = await tryStartProjectProcessing(project_id, processingStatus);
     if (!claim.started) {
@@ -78,6 +80,7 @@ generateRouter.post('/', async (req, res) => {
         current_status: claim.currentStatus,
       });
     }
+    runId = claim.runId;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Could not claim project processing status';
     return res.status(500).json({ error: message });
@@ -87,9 +90,12 @@ generateRouter.post('/', async (req, res) => {
   res.json({ status: processingStatus, project_id });
 
   // Start async processing
-  processGeneration(project_id, user_id, flow_type, callbackBaseUrl).catch((error) => {
-    console.error('Generation failed:', error);
-  });
+  const stopHeartbeat = startProjectProcessingHeartbeat(project_id, runId);
+  processGeneration(project_id, user_id, flow_type, callbackBaseUrl)
+    .catch((error) => {
+      console.error('Generation failed:', error);
+    })
+    .finally(stopHeartbeat);
 });
 
 export function resolveSupportedProjectCity(project: { city: string | null | undefined }): string {

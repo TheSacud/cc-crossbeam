@@ -18,6 +18,8 @@ export const PROCESSING_PROJECT_STATUSES: readonly ProjectStatus[] = [
   'processing-phase2',
 ];
 
+export const DEFAULT_STALE_RUN_TIMEOUT_MS = 60 * 60 * 1000;
+
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
@@ -33,12 +35,18 @@ export async function updateProjectStatus(
   status: ProjectStatus,
   errorMessage?: string,
 ) {
+  const isProcessingStatus = PROCESSING_PROJECT_STATUSES.includes(status);
   const updateData: Record<string, unknown> = {
     status,
     updated_at: new Date().toISOString(),
   };
   if (errorMessage !== undefined) {
     updateData.error_message = errorMessage;
+  }
+  if (!isProcessingStatus) {
+    updateData.processing_started_at = null;
+    updateData.processing_heartbeat_at = null;
+    updateData.processing_run_id = null;
   }
 
   const { error } = await supabase
@@ -187,7 +195,7 @@ export async function tryStartProjectProcessing(
   projectId: string,
   nextStatus: ProjectStatus,
 ): Promise<
-  | { started: true; previousStatus: ProjectStatus }
+  | { started: true; previousStatus: ProjectStatus; runId: string }
   | { started: false; currentStatus: ProjectStatus | null }
 > {
   const { data: current, error: currentError } = await supabase
@@ -211,13 +219,18 @@ export async function tryStartProjectProcessing(
     return { started: false, currentStatus };
   }
 
+  const runId = crypto.randomUUID();
+  const now = new Date().toISOString();
   const { data: claimed, error: claimError } = await supabase
     .schema('crossbeam')
     .from('projects')
     .update({
       status: nextStatus,
       error_message: null,
-      updated_at: new Date().toISOString(),
+      processing_started_at: now,
+      processing_heartbeat_at: now,
+      processing_run_id: runId,
+      updated_at: now,
     })
     .eq('id', projectId)
     .eq('status', currentStatus)
@@ -248,7 +261,76 @@ export async function tryStartProjectProcessing(
     };
   }
 
-  return { started: true, previousStatus: currentStatus };
+  return { started: true, previousStatus: currentStatus, runId };
+}
+
+export async function touchProjectProcessingHeartbeat(
+  projectId: string,
+  runId: string,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .schema('crossbeam')
+    .from('projects')
+    .update({
+      processing_heartbeat_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', projectId)
+    .eq('processing_run_id', runId)
+    .in('status', PROCESSING_PROJECT_STATUSES as ProjectStatus[])
+    .select('id')
+    .maybeSingle();
+
+  if (error) {
+    console.error('Failed to update project processing heartbeat:', error);
+    throw error;
+  }
+
+  return Boolean(data);
+}
+
+export function startProjectProcessingHeartbeat(
+  projectId: string,
+  runId: string,
+  intervalMs = 2 * 60 * 1000,
+): () => void {
+  const timer = setInterval(() => {
+    touchProjectProcessingHeartbeat(projectId, runId).catch((error) => {
+      console.warn(`Failed to update heartbeat for project ${projectId}:`, error);
+    });
+  }, intervalMs);
+
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
+
+export async function failStaleProcessingProjects(
+  staleAfterMs = DEFAULT_STALE_RUN_TIMEOUT_MS,
+): Promise<Array<{ id: string; status: ProjectStatus; processing_run_id: string | null }>> {
+  const staleBefore = new Date(Date.now() - staleAfterMs).toISOString();
+  const message = `Processing run timed out after ${Math.round(staleAfterMs / 60000)} minutes without heartbeat.`;
+
+  const { data, error } = await supabase
+    .schema('crossbeam')
+    .from('projects')
+    .update({
+      status: 'failed',
+      error_message: message,
+      processing_started_at: null,
+      processing_heartbeat_at: null,
+      processing_run_id: null,
+      updated_at: new Date().toISOString(),
+    })
+    .in('status', PROCESSING_PROJECT_STATUSES as ProjectStatus[])
+    .or(`processing_heartbeat_at.is.null,processing_heartbeat_at.lt.${staleBefore}`)
+    .select('id, status, processing_run_id');
+
+  if (error) {
+    console.error('Failed to reconcile stale processing projects:', error);
+    throw error;
+  }
+
+  return (data || []) as Array<{ id: string; status: ProjectStatus; processing_run_id: string | null }>;
 }
 
 export async function createOutputRecord(

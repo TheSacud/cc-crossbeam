@@ -3,33 +3,16 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { supabase, insertMessage } from './supabase.js';
+import {
+  type ImageMagickCommands,
+  popplerCommandCandidates,
+  requireCommand,
+  requireImageMagickCommands,
+  resolveCommand,
+} from './tool-paths.js';
 
 const PAGE_RENDER_DPI = 300;
 const TITLE_BLOCK_DPI = 400;
-
-const WINDOWS_PDFTOPPM_CANDIDATES = [
-  'C:\\Users\\Duarte\\AppData\\Local\\Microsoft\\WinGet\\Packages\\oschwartz10612.Poppler_Microsoft.Winget.Source_8wekyb3d8bbwe\\poppler-25.07.0\\Library\\bin\\pdftoppm.exe',
-];
-
-const WINDOWS_PDFTOTEXT_CANDIDATES = [
-  'C:\\Users\\Duarte\\AppData\\Local\\Microsoft\\WinGet\\Packages\\oschwartz10612.Poppler_Microsoft.Winget.Source_8wekyb3d8bbwe\\poppler-25.07.0\\Library\\bin\\pdftotext.exe',
-];
-
-const WINDOWS_PDFINFO_CANDIDATES = [
-  'C:\\Users\\Duarte\\AppData\\Local\\Microsoft\\WinGet\\Packages\\oschwartz10612.Poppler_Microsoft.Winget.Source_8wekyb3d8bbwe\\poppler-25.07.0\\Library\\bin\\pdfinfo.exe',
-];
-
-const WINDOWS_MAGICK_CANDIDATES = [
-  'C:\\Program Files\\ImageMagick-7.1.2-Q16-HDRI\\magick.exe',
-];
-
-const WINDOWS_IDENTIFY_CANDIDATES: string[] = [];
-const WINDOWS_CONVERT_CANDIDATES: string[] = [];
-
-interface ImageMagickCommands {
-  identify: string[];
-  convert: string[];
-}
 
 export interface PageTextEntry {
   page: number;
@@ -61,11 +44,12 @@ export interface PreliminarySheetEntry {
   title_block_png_path: string;
 }
 
-interface FileRecord {
+export interface FileRecord {
   id?: string;
   filename: string;
   storage_path: string;
-  file_type?: string;
+  file_type?: string | null;
+  created_at?: string | null;
 }
 
 interface UploadArtifact {
@@ -95,50 +79,8 @@ interface DocumentTextArtifact {
   }>;
 }
 
-function resolveCommand(command: string, windowsCandidates: string[] = []): string | null {
-  for (const candidate of windowsCandidates) {
-    if (fs.existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  try {
-    const locator = process.platform === 'win32' ? 'where' : 'which';
-    const output = execFileSync(locator, [command], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    return output.split(/\r?\n/).find(Boolean)?.trim() || null;
-  } catch {
-    return null;
-  }
-}
-
-function requireCommand(command: string, windowsCandidates: string[] = []): string {
-  const resolved = resolveCommand(command, windowsCandidates);
-  if (!resolved) {
-    throw new Error(`${command} is required for local extraction but was not found in PATH`);
-  }
-  return resolved;
-}
-
 function resolvePythonCommand(): string | null {
   return resolveCommand('python3') || resolveCommand('python');
-}
-
-function resolveImageMagickCommands(): ImageMagickCommands {
-  const magickPath = resolveCommand('magick', WINDOWS_MAGICK_CANDIDATES);
-  if (magickPath) {
-    return {
-      identify: [magickPath, 'identify'],
-      convert: [magickPath],
-    };
-  }
-
-  return {
-    identify: [requireCommand('identify', WINDOWS_IDENTIFY_CANDIDATES)],
-    convert: [requireCommand('convert', WINDOWS_CONVERT_CANDIDATES)],
-  };
 }
 
 function runInlinePython(scriptPath: string, source: string, args: string[], timeout = 180_000): string {
@@ -284,6 +226,61 @@ function compactLine(value: string): string {
 
 function asciiFold(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+function isPdfFile(file: Pick<FileRecord, 'filename'>): boolean {
+  return file.filename.toLowerCase().endsWith('.pdf');
+}
+
+function hasPlanBinderFilenameHint(file: Pick<FileRecord, 'filename'>): boolean {
+  const normalized = asciiFold(file.filename).replace(/[^a-z0-9]+/g, ' ');
+  return /\b(?:binder|plans?|plantas?|arquitetura|architecture|dwg|dwfx?|cad)\b/.test(normalized);
+}
+
+function pdfSelectionRank(file: FileRecord): number {
+  if (file.file_type === 'plan-binder') {
+    return 0;
+  }
+  if (hasPlanBinderFilenameHint(file)) {
+    return 1;
+  }
+  return 2;
+}
+
+function sortableTimestamp(value: string | null | undefined): number {
+  if (!value) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
+}
+
+function compareText(left: string | null | undefined, right: string | null | undefined): number {
+  const leftValue = asciiFold(left || '');
+  const rightValue = asciiFold(right || '');
+  if (leftValue < rightValue) return -1;
+  if (leftValue > rightValue) return 1;
+  return 0;
+}
+
+function comparePdfFiles(left: FileRecord, right: FileRecord): number {
+  const rankDelta = pdfSelectionRank(left) - pdfSelectionRank(right);
+  if (rankDelta !== 0) return rankDelta;
+
+  const timeDelta = sortableTimestamp(left.created_at) - sortableTimestamp(right.created_at);
+  if (timeDelta !== 0) return timeDelta;
+
+  return compareText(left.filename, right.filename)
+    || compareText(left.storage_path, right.storage_path)
+    || compareText(left.id, right.id);
+}
+
+function sortPdfFiles(files: FileRecord[]): FileRecord[] {
+  return files.filter(isPdfFile).slice().sort(comparePdfFiles);
+}
+
+export function selectPlanBinderPdf(files: FileRecord[]): FileRecord | null {
+  return sortPdfFiles(files)[0] || null;
 }
 
 function titleCaseFallback(page: number): string {
@@ -584,7 +581,7 @@ function buildPreflightSummary(
 }
 
 function extractPageText(pdfPath: string, pageCount: number, tmpDir: string): PageTextEntry[] {
-  const pdftotextPath = resolveCommand('pdftotext', WINDOWS_PDFTOTEXT_CANDIDATES);
+  const pdftotextPath = resolveCommand('pdftotext', popplerCommandCandidates('pdftotext'));
   if (pdftotextPath) {
     try {
       return Array.from({ length: pageCount }, (_, index) => {
@@ -624,7 +621,7 @@ function extractPageText(pdfPath: string, pageCount: number, tmpDir: string): Pa
 }
 
 function getPdfPageCount(pdfPath: string): number {
-  const pdfinfoPath = resolveCommand('pdfinfo', WINDOWS_PDFINFO_CANDIDATES);
+  const pdfinfoPath = resolveCommand('pdfinfo', popplerCommandCandidates('pdfinfo'));
   if (pdfinfoPath) {
     const output = execFileSync(pdfinfoPath, [pdfPath], {
       encoding: 'utf8',
@@ -699,7 +696,7 @@ async function buildDocumentTextArtifact(
   files: FileRecord[],
   tmpDir: string,
 ): Promise<DocumentTextArtifact> {
-  const pdfFiles = files.filter((file) => file.filename.toLowerCase().endsWith('.pdf'));
+  const pdfFiles = sortPdfFiles(files);
   const documents: DocumentTextArtifact['documents'] = [];
 
   for (const file of pdfFiles) {
@@ -954,7 +951,9 @@ export async function extractPdfForProject(
     .schema('crossbeam')
     .from('files')
     .select('*')
-    .eq('project_id', projectId);
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: true })
+    .order('filename', { ascending: true });
 
   if (filesErr) {
     throw new Error(`Failed to get files: ${filesErr.message}`);
@@ -967,15 +966,12 @@ export async function extractPdfForProject(
     return;
   }
 
-  const pdfFile = existingFiles.find(
-    (file) => file.file_type === 'plan-binder' && file.filename.toLowerCase().endsWith('.pdf'),
-  ) || existingFiles.find(
-    (file) => file.filename.toLowerCase().endsWith('.pdf'),
-  );
+  const pdfFile = selectPlanBinderPdf(existingFiles);
   if (!pdfFile) {
     console.log(`Project ${projectId}: no PDF found, skipping extraction`);
     return;
   }
+  console.log(`Project ${projectId}: selected ${pdfFile.filename} (${pdfFile.file_type || 'unknown'}) for extraction`);
 
   let bucket: string;
   let storagePath: string;
@@ -1010,7 +1006,11 @@ export async function extractPdfForProject(
     const pagesDir = path.join(tmpDir, 'pages-png');
     fs.mkdirSync(pagesDir);
 
-    const pdftoppmPath = requireCommand('pdftoppm', WINDOWS_PDFTOPPM_CANDIDATES);
+    const pdftoppmPath = requireCommand(
+      'pdftoppm',
+      popplerCommandCandidates('pdftoppm'),
+      'local extraction',
+    );
     try {
       execFileSync(pdftoppmPath, ['-png', '-r', String(PAGE_RENDER_DPI), pdfPath, path.join(pagesDir, 'page')], {
         timeout: 180_000,
@@ -1028,7 +1028,7 @@ export async function extractPdfForProject(
     const tbDir = path.join(tmpDir, 'title-blocks');
     fs.mkdirSync(tbDir);
 
-    const imageMagick = resolveImageMagickCommands();
+    const imageMagick = requireImageMagickCommands('local extraction');
     if (resolvePythonCommand()) {
       try {
         extractTitleBlocksWithPython(pdfPath, tbDir);

@@ -44,6 +44,7 @@ export function ProjectDetailClient({
   const [starting, setStarting] = useState(false)
   const [currentPhaseIndex, setCurrentPhaseIndex] = useState(0)
   const supabase = useMemo(() => createClient(), [])
+  const canMutateProject = project.user_id === userId
   const realtimeReady = useRealtimeAuth(supabase)
 
   useEffect(() => {
@@ -219,16 +220,18 @@ export function ProjectDetailClient({
     return (
       <div className="animate-fade-up space-y-6">
         <ResultsViewer projectId={project.id} flowType={project.flow_type} pinnedOutputId={showcaseOutputId} />
-        <div className="flex justify-center pb-8">
-          <Button
-            onClick={handleGoLive}
-            disabled={preparingLive}
-            className="rounded-full px-8 font-bold font-body hover:shadow-[0_0_24px_rgba(45,106,79,0.3)] hover:brightness-110"
-          >
-            {preparingLive ? <Loader2Icon className="w-4 h-4 mr-2 animate-spin" /> : <PlayIcon className="w-4 h-4 mr-2" />}
-            {preparingLive ? 'A preparar...' : 'Executar live'}
-          </Button>
-        </div>
+        {canMutateProject && (
+          <div className="flex justify-center pb-8">
+            <Button
+              onClick={handleGoLive}
+              disabled={preparingLive}
+              className="rounded-full px-8 font-bold font-body hover:shadow-[0_0_24px_rgba(45,106,79,0.3)] hover:brightness-110"
+            >
+              {preparingLive ? <Loader2Icon className="w-4 h-4 mr-2 animate-spin" /> : <PlayIcon className="w-4 h-4 mr-2" />}
+              {preparingLive ? 'A preparar...' : 'Executar live'}
+            </Button>
+          </div>
+        )}
       </div>
     )
   }
@@ -275,26 +278,32 @@ export function ProjectDetailClient({
           </Card>
         )}
 
-        <div className="flex justify-center">
-          <Button
-            onClick={handleStartAnalysis}
-            disabled={starting}
-            className="rounded-full px-10 py-6 text-lg font-bold font-body hover:shadow-[0_0_24px_rgba(45,106,79,0.3)] hover:brightness-110"
-            size="lg"
-          >
-            {starting ? (
-              <Loader2Icon className="w-5 h-5 animate-spin" />
-            ) : (
-              <PlayIcon className="w-5 h-5" />
-            )}
-            {starting
-              ? 'A iniciar...'
-              : project.flow_type === 'city-review'
-                ? 'Executar revisão'
-                : 'Analisar notificação'
-            }
-          </Button>
-        </div>
+        {canMutateProject ? (
+          <div className="flex justify-center">
+            <Button
+              onClick={handleStartAnalysis}
+              disabled={starting}
+              className="rounded-full px-10 py-6 text-lg font-bold font-body hover:shadow-[0_0_24px_rgba(45,106,79,0.3)] hover:brightness-110"
+              size="lg"
+            >
+              {starting ? (
+                <Loader2Icon className="w-5 h-5 animate-spin" />
+              ) : (
+                <PlayIcon className="w-5 h-5" />
+              )}
+              {starting
+                ? 'A iniciar...'
+                : project.flow_type === 'city-review'
+                  ? 'Executar revisão'
+                  : 'Analisar notificação'
+              }
+            </Button>
+          </div>
+        ) : (
+          <p className="text-center text-sm text-muted-foreground font-body">
+            Este demo publico esta em modo de leitura.
+          </p>
+        )}
       </div>
     )
   }
@@ -328,6 +337,14 @@ export function ProjectDetailClient({
   }
 
   if (project.status === 'awaiting-answers') {
+    if (!canMutateProject) {
+      return (
+        <div className="text-center py-12">
+          <p className="text-muted-foreground font-body">Este demo publico esta em modo de leitura.</p>
+        </div>
+      )
+    }
+
     return (
       <div className="space-y-6 animate-fade-up">
         <div className="text-center">
@@ -345,7 +362,7 @@ export function ProjectDetailClient({
     return (
       <div className="animate-fade-up space-y-6">
         <ResultsViewer projectId={project.id} flowType={project.flow_type} />
-        {project.is_demo && (
+        {project.is_demo && canMutateProject && (
           <div className="flex justify-center pb-8">
             <Button
               onClick={handleReset}
@@ -372,15 +389,17 @@ export function ProjectDetailClient({
             <p className="text-muted-foreground font-body">
               {project.error_message || 'A análise falhou. Tente novamente.'}
             </p>
-            <Button
-              onClick={project.is_demo ? handleReset : handleRetry}
-              disabled={resetting}
-              variant="outline"
-              className="rounded-full font-body"
-            >
-              <RotateCcwIcon className="w-4 h-4 mr-2" />
-              {resetting ? 'A repor...' : 'Tentar de novo'}
-            </Button>
+            {canMutateProject && (
+              <Button
+                onClick={project.is_demo ? handleReset : handleRetry}
+                disabled={resetting}
+                variant="outline"
+                className="rounded-full font-body"
+              >
+                <RotateCcwIcon className="w-4 h-4 mr-2" />
+                {resetting ? 'A repor...' : 'Tentar de novo'}
+              </Button>
+            )}
           </CardContent>
         </Card>
       </div>

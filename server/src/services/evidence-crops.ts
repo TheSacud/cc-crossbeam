@@ -3,18 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { getProjectFiles, supabase, uploadOutputArtifact } from './supabase.js';
-
-const WINDOWS_MAGICK_CANDIDATES = [
-  'C:\\Program Files\\ImageMagick-7.1.2-Q16-HDRI\\magick.exe',
-];
-
-const WINDOWS_IDENTIFY_CANDIDATES: string[] = [];
-const WINDOWS_CONVERT_CANDIDATES: string[] = [];
-
-interface ImageMagickCommands {
-  identify: string[];
-  convert: string[];
-}
+import { type ImageMagickCommands, resolveImageMagickCommands } from './tool-paths.js';
 
 interface CropBox {
   x: number;
@@ -45,49 +34,6 @@ function asNumber(value: unknown): number | null {
 
 function cloneValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function resolveCommand(command: string, windowsCandidates: string[] = []): string | null {
-  for (const candidate of windowsCandidates) {
-    if (fs.existsSync(candidate)) return candidate;
-  }
-  try {
-    const locator = process.platform === 'win32' ? 'where' : 'which';
-    const output = execFileSync(locator, [command], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    return output.split(/\r?\n/).find(Boolean)?.trim() || null;
-  } catch {
-    return null;
-  }
-}
-
-function requireCommand(command: string, windowsCandidates: string[] = []): string {
-  const resolved = resolveCommand(command, windowsCandidates);
-  if (!resolved) {
-    throw new Error(`${command} is required for evidence crop generation but was not found in PATH`);
-  }
-  return resolved;
-}
-
-function resolveImageMagickCommands(): ImageMagickCommands | null {
-  const magickPath = resolveCommand('magick', WINDOWS_MAGICK_CANDIDATES);
-  if (magickPath) {
-    return {
-      identify: [magickPath, 'identify'],
-      convert: [magickPath],
-    };
-  }
-
-  const identifyPath = resolveCommand('identify', WINDOWS_IDENTIFY_CANDIDATES);
-  const convertPath = resolveCommand('convert', WINDOWS_CONVERT_CANDIDATES);
-  if (!identifyPath || !convertPath) return null;
-
-  return {
-    identify: [requireCommand('identify', WINDOWS_IDENTIFY_CANDIDATES)],
-    convert: [requireCommand('convert', WINDOWS_CONVERT_CANDIDATES)],
-  };
 }
 
 function storageParts(storagePath: string): { bucket: string; path: string } {

@@ -16,11 +16,12 @@ export async function POST(request: NextRequest) {
 
     const supabase = await getSupabaseForAuth(auth)
 
-    // Only allow resetting demo projects
+    // Only allow resetting demo projects owned by the browser user.
+    // API-key callers remain trusted automation.
     const { data: project, error: projectError } = await supabase
       .schema('crossbeam')
       .from('projects')
-      .select('id, is_demo')
+      .select('id, user_id, is_demo')
       .eq('id', project_id)
       .single()
 
@@ -30,6 +31,13 @@ export async function POST(request: NextRequest) {
 
     if (!project.is_demo) {
       return NextResponse.json({ error: 'Only demo projects can be reset' }, { status: 403 })
+    }
+
+    if (!auth.isApiKey && project.user_id !== auth.userId) {
+      return NextResponse.json(
+        { error: 'Public demo projects are read-only. Only the owner can reset this demo.' },
+        { status: 403 },
+      )
     }
 
     // Clear messages

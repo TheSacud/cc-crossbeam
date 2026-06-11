@@ -4,7 +4,18 @@ import assert from 'node:assert/strict';
 process.env.SUPABASE_URL ||= 'http://127.0.0.1:54321';
 process.env.SUPABASE_SERVICE_ROLE_KEY ||= 'test-key';
 
-const { inferScale } = await import('../dist/services/extract.js');
+const { inferScale, selectPlanBinderPdf } = await import('../dist/services/extract.js');
+
+function fileRecord(filename, overrides = {}) {
+  return {
+    id: filename,
+    filename,
+    storage_path: `uploads/${filename}`,
+    file_type: 'other',
+    created_at: null,
+    ...overrides,
+  };
+}
 
 test('inferScale parses standard title-block scale formats', () => {
   assert.equal(inferScale('ESCALA: 1:100'), '1:100');
@@ -16,6 +27,37 @@ test('inferScale normalizes common title-block OCR mistakes', () => {
   assert.equal(inferScale('ee | | ESCALA: [11100 |'), '1:100');
   assert.equal(inferScale('| ESCALA: | SCALA: 4:100 | 100 A'), '1:100');
   assert.equal(inferScale('ESCALA: l:2O'), '1:20');
+});
+
+test('selectPlanBinderPdf prefers the explicit plan binder PDF', () => {
+  const selected = selectPlanBinderPdf([
+    fileRecord('01-corrections-letter.pdf', { created_at: '2026-01-01T00:00:00.000Z' }),
+    fileRecord('zz-main-binder.pdf', {
+      file_type: 'plan-binder',
+      created_at: '2026-01-02T00:00:00.000Z',
+    }),
+  ]);
+
+  assert.equal(selected?.filename, 'zz-main-binder.pdf');
+});
+
+test('selectPlanBinderPdf falls back to plan-like PDF names before administrative PDFs', () => {
+  const selected = selectPlanBinderPdf([
+    fileRecord('01-corrections-letter.pdf', { created_at: '2026-01-01T00:00:00.000Z' }),
+    fileRecord('02-plantas-arquitetura.pdf', { created_at: '2026-01-02T00:00:00.000Z' }),
+  ]);
+
+  assert.equal(selected?.filename, '02-plantas-arquitetura.pdf');
+});
+
+test('selectPlanBinderPdf has a stable fallback when there are no binder hints', () => {
+  const selected = selectPlanBinderPdf([
+    fileRecord('b-document.pdf', { created_at: '2026-01-02T00:00:00.000Z' }),
+    fileRecord('a-document.pdf', { created_at: '2026-01-01T00:00:00.000Z' }),
+    fileRecord('z-image.png', { created_at: '2025-01-01T00:00:00.000Z' }),
+  ]);
+
+  assert.equal(selected?.filename, 'a-document.pdf');
 });
 
 test('inferScale does not treat arbitrary drawing dimensions as scales', () => {

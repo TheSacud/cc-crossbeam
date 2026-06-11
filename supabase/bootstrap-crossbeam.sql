@@ -26,11 +26,18 @@ create table crossbeam.projects (
       'failed'
     )),
   error_message text,
+  processing_started_at timestamptz,
+  processing_heartbeat_at timestamptz,
+  processing_run_id uuid,
   applicant_name text,
   is_demo boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+create index projects_processing_heartbeat_idx
+  on crossbeam.projects (processing_heartbeat_at)
+  where status in ('processing', 'processing-phase1', 'processing-phase2');
 
 create table crossbeam.files (
   id uuid primary key default gen_random_uuid(),

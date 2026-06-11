@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'project_id is required' }, { status: 400 })
     }
 
-    // Verify project ownership (browser auth only)
+    // Verify project ownership (browser auth only). Public demos are read-only.
     if (!auth.isApiKey) {
       const supabase = await getSupabaseForAuth(auth)
       const { data: project, error: projectError } = await supabase
@@ -28,8 +28,15 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Project not found' }, { status: 404 })
       }
 
-      if (project.user_id !== auth.userId && !project.is_demo) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+      if (project.user_id !== auth.userId) {
+        return NextResponse.json(
+          {
+            error: project.is_demo
+              ? 'Public demo projects are read-only. Duplicate the project before extracting.'
+              : 'Unauthorized',
+          },
+          { status: 403 },
+        )
       }
     }
 

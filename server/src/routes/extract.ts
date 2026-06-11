@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { extractPdfForProject } from '../services/extract.js';
 import {
+  startProjectProcessingHeartbeat,
   tryStartProjectProcessing,
   updateProjectStatus,
   type ProjectStatus,
@@ -22,6 +23,7 @@ extractRouter.post('/', async (req, res) => {
 
   const { project_id, force } = parseResult.data;
   let previousStatus: ProjectStatus;
+  let runId: string;
   try {
     const claim = await tryStartProjectProcessing(project_id, 'processing');
     if (!claim.started) {
@@ -34,6 +36,7 @@ extractRouter.post('/', async (req, res) => {
       });
     }
     previousStatus = claim.previousStatus;
+    runId = claim.runId;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Could not claim project processing status';
     return res.status(500).json({ error: message });
@@ -42,6 +45,7 @@ extractRouter.post('/', async (req, res) => {
   // Respond immediately — extraction runs async
   res.json({ status: 'extracting', project_id, force: !!force });
 
+  const stopHeartbeat = startProjectProcessingHeartbeat(project_id, runId);
   extractPdfForProject(project_id, { force })
     .then(() => updateProjectStatus(project_id, previousStatus))
     .catch((error) => {
@@ -50,5 +54,6 @@ extractRouter.post('/', async (req, res) => {
       updateProjectStatus(project_id, 'failed', message).catch((statusError) => {
         console.error(`Failed to mark extraction failure for project ${project_id}:`, statusError);
       });
-    });
+    })
+    .finally(stopHeartbeat);
 });

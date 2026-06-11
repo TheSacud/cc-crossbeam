@@ -2,8 +2,10 @@ import 'dotenv/config';
 import express from 'express';
 import { generateRouter } from './routes/generate.js';
 import { extractRouter } from './routes/extract.js';
+import { maintenanceRouter, staleRunTimeoutMsFromEnv } from './routes/maintenance.js';
 import { sandboxCallbackRouter } from './routes/sandbox-callback.js';
 import { requireInternalWorkerToken } from './middleware/internal-auth.js';
+import { failStaleProcessingProjects } from './services/supabase.js';
 
 const app = express();
 
@@ -19,6 +21,7 @@ app.get('/health', (req, res) => {
 app.use('/sandbox-callback', sandboxCallbackRouter);
 app.use('/generate', requireInternalWorkerToken, generateRouter);
 app.use('/extract', requireInternalWorkerToken, extractRouter);
+app.use('/maintenance', requireInternalWorkerToken, maintenanceRouter);
 
 // Error handler
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -32,4 +35,14 @@ const HOST = process.env.HOST || '0.0.0.0';
 app.listen(Number(PORT), HOST, () => {
   console.log(`CrossBeam server listening on ${HOST}:${PORT}`);
   console.log(`Health check: http://${HOST}:${PORT}/health`);
+
+  failStaleProcessingProjects(staleRunTimeoutMsFromEnv())
+    .then((projects) => {
+      if (projects.length > 0) {
+        console.log(`Reconciled ${projects.length} stale processing projects on startup`);
+      }
+    })
+    .catch((error) => {
+      console.warn('Startup stale run reconciliation skipped:', error);
+    });
 });

@@ -31,6 +31,9 @@ export interface Project {
   city: string | null
   status: ProjectStatus
   error_message: string | null
+  processing_started_at: string | null
+  processing_heartbeat_at: string | null
+  processing_run_id: string | null
   applicant_name: string | null
   is_demo: boolean
   created_at: string
